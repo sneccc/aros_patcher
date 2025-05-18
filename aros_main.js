@@ -88,8 +88,14 @@ console.log('[aros_main.js] Aros namespace ensured (top level). Initial Aros obj
                 try {
                     // Initialize UI
                     if (Aros.UI) {
-                        Aros.UI.createUI();
+                        Aros.UI.init();
                         log('✅ UI initialized');
+                    }
+                    
+                    // Initialize Prompt module
+                    if (Aros.Prompt) {
+                        Aros.Prompt.init();
+                        log('✅ Prompt module initialized');
                     }
                     
                     // Initialize image handling
