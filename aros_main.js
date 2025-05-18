@@ -11,11 +11,11 @@
 // @match        https://sora.chatgpt.com/*
 // @grant        none
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js
-// @require      https://cdn.jsdelivr.net/gh/YourUsername/aros_patcher@main/modules/aros_core.js
-// @require      https://cdn.jsdelivr.net/gh/YourUsername/aros_patcher@main/modules/aros_ui.js
-// @require      https://cdn.jsdelivr.net/gh/YourUsername/aros_patcher@main/modules/aros_prompt.js
-// @require      https://cdn.jsdelivr.net/gh/YourUsername/aros_patcher@main/modules/aros_image.js
-// @require      https://cdn.jsdelivr.net/gh/YourUsername/aros_patcher@main/modules/wildcards.js
+// @require      https://raw.githubusercontent.com/sneccc/aros_patcher/refs/heads/main/modules/aros_core.js
+// @require      https://raw.githubusercontent.com/sneccc/aros_patcher/refs/heads/main/modules/aros_ui.js
+// @require      https://raw.githubusercontent.com/sneccc/aros_patcher/refs/heads/main/modules/aros_prompt.js
+// @require      https://raw.githubusercontent.com/sneccc/aros_patcher/refs/heads/main/modules/aros_image.js
+// @require      https://raw.githubusercontent.com/sneccc/aros_patcher/refs/heads/main/modules/wildcards.js
 // ==/UserScript==
 
 (function() {
