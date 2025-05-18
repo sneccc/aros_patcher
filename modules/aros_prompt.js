@@ -152,32 +152,99 @@ Aros.Prompt = (function() {
     
     // --- Wildcard Functions ---
     function generateWildcardPrompts(tag, valuesArray) {
-        Aros.Core.log(`Generating wildcard prompts with tag: '${tag}' and ${valuesArray.length} values.`, 'info', 'Prompt');
-        if (!tag || valuesArray.length === 0) {
-            Aros.Core.warn("Tag or values array is empty for wildcard generation.", 'Prompt');
+        Aros.Core.log(`Generating specific prompts for tag: '${tag}' with ${valuesArray.length} values.`, 'info', 'Prompt');
+        if (!tag || !valuesArray || valuesArray.length === 0) {
+            Aros.Core.warn("Tag or values array is empty for prompt generation.", 'Prompt');
             return [];
         }
-        if (Aros.Wildcards && Aros.Wildcards.generate) {
-            // Assuming Aros.Wildcards.generate expects a template string (like "prompt with __tag__") 
-            // and an object/map of values for tags, or adapts to this structure.
-            // For simplicity, if `tag` is e.g., "__color__" and valuesArray is ["red", "blue"],
-            // we might need a placeholder prompt template like "My prompt with __placeholder__".
-            // This part depends heavily on wildcards.js implementation.
-            // Let's assume a simple scenario: wildcards.js can take the tag and values directly.
-            // Or, more likely, it takes a base prompt string containing the tag.
 
-            // This is a placeholder. The actual call to Aros.Wildcards.generate will depend on its API.
-            // For now, let's assume a hypothetical structure in Aros.Wildcards that can take this.
-            // Example: Aros.Wildcards.generate(basePromptTemplate, { tagName: valuesArray })
-            // Since UI doesn't provide a base prompt template with the tag, we create one.
-            const basePromptTemplate = `__${tag.replace(/^__+|__+$/g, '')}__`; // e.g., __color__
-            const generated = Aros.Wildcards.generate(basePromptTemplate, valuesArray, tag.replace(/^__+|__+$/g, ''));
-            Aros.Core.log(`Generated ${generated.length} prompts via Aros.Wildcards.`, 'info', 'Prompt');
-            return generated;
-        } else {
-            Aros.Core.error("Aros.Wildcards module or its 'generate' function not found.", 'Prompt');
-            return [];
+        const cleanTag = tag.replace(/^__+|__+$/g, ''); // Remove leading/trailing double underscores if present
+        const prompts = [];
+
+        for (const value of valuesArray) {
+            // Create a prompt where the placeholder __tag__ is replaced by the value.
+            // We assume the user wants the raw value inserted.
+            // If the UI always provides the tag as, e.g., "__color__", and expects that literal string to be replaced,
+            // then the base prompt template would be the tag itself.
+            // Example: if tag is "__theme__" and value is "vintage", prompt becomes "vintage"
+            // This interpretation seems most direct given the UI structure.
+            // The UI is asking: for the placeholder identified by `tag`, generate prompts using each of these `valuesArray` entries.
+            
+            // If the intention was to use the `tag` as a key into Aros.Wildcards.wildcards definitions
+            // and then replace a placeholder *in a different user-provided template string* (not available here),
+            // the logic would be different. But UI passes the values directly.
+
+            // For the UI's current structure (providing a tag name and a list of values for that tag):
+            // It wants to generate a list of prompts, where each prompt is effectively one of the values,
+            // assuming the `tag` was just a label for the input field.
+            // OR, it implies a base template like "[value]"
+            // OR, more likely, it implies a template string like "__tag__" that gets replaced.
+
+            // Let's refine based on the UI's intention: the UI collects a `wildcardTag` (e.g. __myTag__)
+            // and `wildcardValues`. It wants prompts where `__myTag__` is replaced by each value.
+            // So, the `tag` parameter IS the placeholder string itself.
+
+            // const prompt = value; // Simplest interpretation: each value is a prompt.
+            // More robust: ensure the tag is treated as a placeholder to be replaced.
+            // If the UI gives `tag = "__color__"`, and a value is `"red"`, the prompt should be `"red"`.
+            // If the user *also* typed other text around the tag in a *main* prompt area that used this specific wildcard tag,
+            // that would be more complex. But the UI has separate areas.
+
+            // The most straightforward interpretation for the UI's current `aros-wildcard-tag-input` and `aros-wildcard-values-input`:
+            // The `tag` is the placeholder string e.g., "__custom_element__".
+            // The `valuesArray` contains things that should replace this placeholder.
+            // However, the UI is designed to generate *a list of complete prompts from these values*,
+            // not to modify a *different, existing* prompt template using these values.
+
+            // So, if tag is "__character__" and values are ["wizard", "warrior"],
+            // it should produce prompts: ["wizard", "warrior"].
+            // This means the `generateWildcardPrompts` function is effectively returning the `valuesArray`
+            // if the `tag` is just a label. But the UI calls it `wildcardTagInput` implying it *is* a tag.
+
+            // Let's assume the `tag` is a placeholder like `__myitem__` and the user wants to generate prompts
+            // where `__myitem__` is replaced by each value in `valuesArray`.
+            // And the output prompt is *just* that replacement.
+            // Example: tag = `__artist__`, values = [`"Van Gogh"`, `"Monet"`] -> prompts = [`"Van Gogh"`, `"Monet"`]
+            // This seems to be the most direct mapping from the UI fields.
+            // The `tag` from `wildcardTagInput` is the placeholder.
+            // The `valuesArray` from `wildcardValuesInput` are the replacements.
+            // Each replacement forms a new, complete prompt.
+            prompts.push(String(value)); 
         }
+
+        Aros.Core.log(`Generated ${prompts.length} prompts from specific tag/values.`, 'info', 'Prompt');
+        return prompts;
+        
+        /* Original attempt that was trying to use Aros.Wildcards.generate:
+        if (Aros.Wildcards && Aros.Wildcards.generate) {
+            // This was based on the assumption Aros.Wildcards.generate could fit this model directly.
+            // The basePromptTemplate here IS the tag itself, which will be replaced by each value.
+            // Aros.Wildcards.generate(template, values, tagName) was the hypothetical signature.
+            // Here, `tag` is the placeholder string, e.g., "__myPlaceholder__".
+            // `valuesArray` is the list of strings to substitute for it.
+            // The third param `tagName` to `Aros.Wildcards.generate` is redundant if `tag` is the template.
+
+            let generatedPrompts = [];
+            for (const val of valuesArray) {
+                // Aros.Wildcards.generate expects a template. If tag is "__color__", 
+                // and value is "red", processSingleWildcard within wildcards.js would turn "__color__" to a random color.
+                // This is not what we want. We want "__color__" to become "red" (the specific value from the list).
+                
+                // So, Aros.Wildcards.processSingleWildcard(tag) won't work as it picks a random value for `tag`.
+                // Aros.Wildcards.processPromptTemplate(tag) also won't work for the same reason after bracket expansion.
+
+                // We need a direct substitution.
+                // The `tag` from UI is the placeholder string. e.g. __MY_TAG__
+                // Each item in `valuesArray` replaces this placeholder.
+                 generatedPrompts.push(val); // Each value becomes a prompt directly.
+            }
+            Aros.Core.log(`Generated ${generatedPrompts.length} prompts via direct value usage.`, 'info', 'Prompt');
+            return generatedPrompts;
+        } else {
+            Aros.Core.error("Aros.Wildcards module or its 'generate' function not found. Returning raw values.", 'Prompt');
+            return valuesArray; // Fallback to just returning the values as prompts
+        }
+        */
     }
     
     function handleLoadExample() {
