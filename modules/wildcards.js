@@ -107,95 +107,6 @@ Aros.Wildcards = (function() {
         }
     };
 
-    // Get a random value from an array
-    function getRandomValue(array) {
-        return array[Math.floor(Math.random() * array.length)];
-    }
-
-    // Process wildcards in a string format __category__
-    function processWildcards(prompt) {
-        const wildcardRegex = /__(\w+)__/g;
-        let processedPrompt = prompt;
-        let match;
-
-        while ((match = wildcardRegex.exec(prompt)) !== null) {
-            const wildcardName = match[1];
-            if (wildcards[wildcardName] && wildcards[wildcardName].values) {
-                const randomValue = getRandomValue(wildcards[wildcardName].values);
-                processedPrompt = processedPrompt.replace(match[0], randomValue);
-            }
-        }
-
-        return processedPrompt;
-    }
-
-    // Process template with variables and wildcards
-    // Variables format: [option1, option2, option3]
-    function processPromptTemplate(promptTemplate) {
-        const processedPrompts = [];
-        const variableRegex = /\[(.*?)\]/g;
-        const matches = [...promptTemplate.matchAll(variableRegex)];
-
-        if (matches.length === 0) {
-            // If no variables, just process wildcards
-            processedPrompts.push(processWildcards(promptTemplate));
-            return processedPrompts;
-        }
-
-        let currentPrompts = [promptTemplate];
-        matches.forEach(match => {
-            const variableOptions = match[1].split(',').map(option => option.trim());
-            const newPrompts = [];
-
-            currentPrompts.forEach(prompt => {
-                variableOptions.forEach(option => {
-                    const newPrompt = prompt.replace(match[0], option);
-                    newPrompts.push(newPrompt);
-                });
-            });
-
-            currentPrompts = newPrompts;
-        });
-
-        // Process wildcards after all variable substitutions
-        return currentPrompts.map(prompt => processWildcards(prompt));
-    }
-
-    // Generate multiple prompts from a template with variables and wildcards
-    function generatePrompts(promptTemplate, count = 1) {
-        if (Aros.Core && Aros.Core.log) {
-            Aros.Core.log(`Generating ${count} prompts from template: "${promptTemplate.substring(0, 50)}..."`);
-        } else {
-            console.log(`[Aros Wildcards] Generating ${count} prompts from template: "${promptTemplate.substring(0, 50)}..."`);
-        }
-        
-        // First, process the template to get all possible combinations
-        const allVariations = processPromptTemplate(promptTemplate);
-        
-        // If there are fewer variations than requested count, repeat variations
-        if (allVariations.length < count) {
-            const result = [];
-            for (let i = 0; i < count; i++) {
-                result.push(allVariations[i % allVariations.length]);
-            }
-            return result;
-        }
-        
-        // If there are more variations than requested, select random subset
-        if (allVariations.length > count) {
-            const shuffled = [...allVariations];
-            for (let i = shuffled.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-            }
-            return shuffled.slice(0, count);
-        }
-        
-        // If exactly the right number, return all
-        return allVariations;
-    }
-
-    // Example templates for Aros
     const examples = [
         "A __animal__ in a __location__ during __weather__ conditions, __camera__ shot, __lighting__ lighting, __style__ style",
         "A __color__ __object__ made of __material__, __emotion__ mood, shot during __time__ with __lighting__ lighting",
@@ -203,30 +114,114 @@ Aros.Wildcards = (function() {
         "[Close-up, Wide shot, Aerial view] of a __animal__ in a __location__ during __weather__ weather, __style__ aesthetic",
         "A [happy, sad, excited, thoughtful] person holding a __color__ __object__ in a __location__ with __lighting__ lighting"
     ];
-    
-    // Get a random example template
+
+    function _log(message) {
+        if (Aros.Core && Aros.Core.log) {
+            Aros.Core.log(message); // Prefer Core logger
+        } else {
+            console.log(`[Aros Wildcards Internal] ${message}`); // Fallback
+        }
+    }
+
+    function getRandomValue(array) {
+        if (!array || array.length === 0) return "";
+        return array[Math.floor(Math.random() * array.length)];
+    }
+
+    function processSingleWildcard(prompt) {
+        const wildcardRegex = /__(\w+)__/g;
+        let processedPrompt = prompt;
+        let match;
+        while ((match = wildcardRegex.exec(prompt)) !== null) {
+            const wildcardName = match[1].toLowerCase(); // Ensure case-insensitivity for wildcard lookup
+            if (wildcards[wildcardName] && wildcards[wildcardName].values) {
+                const randomValue = getRandomValue(wildcards[wildcardName].values);
+                processedPrompt = processedPrompt.replace(match[0], randomValue);
+            }
+        }
+        return processedPrompt;
+    }
+
+    function processPromptTemplate(template) {
+        const variableRegex = /\[(.*?)\]/g;
+        let prompts = [template];
+        let match;
+
+        // Iteratively expand bracketed variations
+        // This loop handles multiple sets of brackets correctly
+        while(true) {
+            let nextPrompts = [];
+            let processedThisIteration = false;
+            for (const currentPrompt of prompts) {
+                match = variableRegex.exec(currentPrompt);
+                if (match) {
+                    processedThisIteration = true;
+                    const options = match[1].split(',').map(opt => opt.trim());
+                    options.forEach(option => {
+                        nextPrompts.push(currentPrompt.replace(match[0], option));
+                    });
+                } else {
+                    nextPrompts.push(currentPrompt); // No more variations in this prompt string
+                }
+            }
+            prompts = nextPrompts;
+            if (!processedThisIteration) break; // No more variations found in any prompt string
+             variableRegex.lastIndex = 0; // Reset regex index for next iteration on modified prompts
+        }
+        
+        // After all bracket variations are expanded, process wildcards in each resulting prompt
+        return prompts.map(p => processSingleWildcard(p));
+    }
+
+    function generatePrompts(promptTemplate, count = 1) {
+        _log(`Generating ${count} prompts from template: "${promptTemplate.substring(0, 70)}..."`);
+        
+        const allVariations = processPromptTemplate(promptTemplate);
+        _log(`Generated ${allVariations.length} unique variations from template.`);
+
+        if (allVariations.length === 0) {
+            _log("Warning: Prompt template resulted in zero variations. Returning empty array.");
+            return [];
+        }
+        
+        let result = [];
+        if (allVariations.length < count) {
+            _log(`Fewer variations (${allVariations.length}) than requested (${count}). Repeating variations.`);
+            for (let i = 0; i < count; i++) {
+                result.push(allVariations[i % allVariations.length]);
+            }
+        } else if (allVariations.length > count) {
+            _log(`More variations (${allVariations.length}) than requested (${count}). Selecting random subset.`);
+            // Fisher-Yates shuffle to get a random subset
+            let shuffled = [...allVariations];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            result = shuffled.slice(0, count);
+        } else {
+            result = allVariations; // Exactly the right number
+        }
+        _log(`Final generated prompt count: ${result.length}`);
+        return result;
+    }
+
     function getRandomExample() {
         return getRandomValue(examples);
     }
     
-    // Module initialization
     function init() {
-        if (Aros.Core && Aros.Core.log) {
-            Aros.Core.log("Wildcards Module Initialized");
-        } else {
-            console.log("[Aros Wildcards Internal] Module Initialized (Aros.Core.log not available)");
-        }
+        _log("Wildcards Module Initialized");
     }
     
-    // Public API
     console.log('[wildcards.js] IIFE for Aros.Wildcards executed, returning object.');
     return {
-        wildcards,
-        getRandomValue,
-        processWildcards,
+        wildcards, // Expose definitions if needed by UI for display
+        examples,  // Expose examples for UI
+        getRandomValue, // General utility, might be useful
+        processSingleWildcard, // Renamed from processWildcards for clarity
         processPromptTemplate,
         generatePrompts,
-        examples,
         getRandomExample,
         init
     };
@@ -236,4 +231,4 @@ if (window.Aros && Aros.Wildcards) {
     console.log('[wildcards.js] Aros.Wildcards defined. Keys:', Object.keys(Aros.Wildcards).join(', '));
 } else {
     console.error('[wildcards.js] Aros.Wildcards is NOT defined after execution.');
-} 
+}
