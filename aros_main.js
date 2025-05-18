@@ -57,15 +57,16 @@ console.log('[aros_main.js] Aros namespace ensured (top level). Initial Aros obj
         return allLoaded;
     }
     
-    // Initialize the application when the DOM is fully loaded
-    document.addEventListener('DOMContentLoaded', function() {
-        log('DOM content loaded, checking modules...');
-        console.log('[aros_main.js] Current Aros object keys at DOMContentLoaded:', window.Aros ? Object.keys(window.Aros).join(', ') : 'Aros undefined');
+    // Function to run the main application logic
+    function runArosPatcher() {
+        log('DOM ready, checking modules...');
+        console.log('[aros_main.js] Current Aros object keys at DOM ready:', window.Aros ? Object.keys(window.Aros).join(', ') : 'Aros undefined');
         
         // Check if all required modules are loaded
         if (!areModulesLoaded()) {
             log('❌ Some modules failed to load. Check the console for more details.');
             alert('Aros Patcher: Some modules failed to load. The script may not work correctly.');
+            // Optionally, do not return here to allow Core to at least try to init if available
         }
         
         // Only proceed if Core module is available
@@ -126,5 +127,14 @@ console.log('[aros_main.js] Aros namespace ensured (top level). Initial Aros obj
             console.error(e);
             alert(`Aros Patcher Critical Error: ${e.message}. Check console for details.`);
         }
-    });
+    }
+
+    // Initialize the application
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        log('DOM already interactive/complete. Running Aros Patcher directly.');
+        runArosPatcher();
+    } else {
+        log('DOM not yet loaded. Adding DOMContentLoaded listener for Aros Patcher.');
+        document.addEventListener('DOMContentLoaded', runArosPatcher);
+    }
 })(); 
