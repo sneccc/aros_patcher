@@ -27,7 +27,70 @@ Aros.Image = (function() {
     
     // --- Image Download Functions ---
     async function handleDownload() {
-        // Implementation for handling image download
+        Aros.Core.log("Image download process started.", 'info', 'Image');
+        const urlsToDownload = Aros.Core.getSelectedImageUrls(); // Get URLs from Core
+
+        if (!urlsToDownload || urlsToDownload.size === 0) {
+            Aros.Core.log("No images selected for download.", 'warn', 'Image');
+            if (Aros.UI && Aros.UI.logToUIPanel) {
+                Aros.UI.logToUIPanel("No images selected to download.", "warn");
+            }
+            return;
+        }
+
+        Aros.Core.log(`Attempting to download ${urlsToDownload.size} selected images.`, 'info', 'Image');
+        if (Aros.UI && Aros.UI.logToUIPanel) {
+            Aros.UI.logToUIPanel(`Starting download of ${urlsToDownload.size} image(s)...`, "info");
+        }
+        if (Aros.UI && Aros.UI.showOverlay) Aros.UI.showOverlay(`Downloading ${urlsToDownload.size} images...`);
+        
+        Aros.Core.setDownloading(true);
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const url of urlsToDownload) {
+            if (!Aros.Core.isDownloading()) { // Check if stop was requested
+                Aros.Core.log("Download process was stopped prematurely.", 'warn', 'Image');
+                break;
+            }
+            try {
+                // Extract filename - basic version, might need improvement for complex URLs
+                let filename = url.substring(url.lastIndexOf('/') + 1).split('?')[0];
+                if (!filename.match(/\.(png|jpg|jpeg|webp|gif)$/i)) {
+                    filename += '.png'; // Default to png if no extension
+                }
+
+                // Fetch and convert/download logic (simplified)
+                // Assuming convertWebpToPngBlob handles fetching and conversion if needed
+                const blob = await convertWebpToPngBlob(url); // convertWebpToPngBlob should handle non-WebP passthrough or conversion
+                if (blob) {
+                    Aros.Core.triggerDownload(blob, filename); // Use Core's triggerDownload
+                    successCount++;
+                    Aros.Core.log(`Successfully downloaded: ${filename}`, 'info', 'Image');
+                } else {
+                    errorCount++;
+                    Aros.Core.error(`Failed to process blob for: ${filename}`, 'Image');
+                }
+            } catch (err) {
+                errorCount++;
+                Aros.Core.error(`Error downloading ${url}: ${err.message}`, 'Image');
+                console.error(err);
+            }
+            // Optional: Small delay between downloads
+            // await new Promise(resolve => setTimeout(resolve, 200)); 
+        }
+        
+        Aros.Core.setDownloading(false);
+        if (Aros.UI && Aros.UI.hideOverlay) Aros.UI.hideOverlay();
+
+        const summaryMessage = `Download complete. Success: ${successCount}, Failed: ${errorCount}.`;
+        Aros.Core.log(summaryMessage, 'info', 'Image');
+        if (Aros.UI && Aros.UI.logToUIPanel) {
+            Aros.UI.logToUIPanel(summaryMessage, errorCount > 0 ? "warn" : "success");
+        }
+
+        // Clear selections after download? (Optional - based on desired behavior)
+        // if (successCount > 0 && Aros.Core.clearSelectedImages) Aros.Core.clearSelectedImages(); 
     }
     
     async function convertWebpToPngBlob(url, cropOption = 'none') {
