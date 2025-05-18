@@ -4,11 +4,15 @@
  */
 
 // Initialize the global Aros namespace if it doesn't exist
+console.log('[aros_core.js] Script start (top level).');
 window.Aros = window.Aros || {};
+console.log('[aros_core.js] Aros namespace ensured (top level). Current Aros keys:', window.Aros ? Object.keys(window.Aros).join(', ') : 'Aros undefined');
 
 // Create the Core module within the Aros namespace
+console.log('[aros_core.js] Attempting to define Aros.Core...');
 Aros.Core = (function() {
     'use strict';
+    console.log('[aros_core.js] IIFE for Aros.Core executing.');
     
     // --- Global Variables ---
     const SCRIPT_VERSION = "6.0";
@@ -233,6 +237,7 @@ Aros.Core = (function() {
     }
     
     // --- Public API ---
+    console.log('[aros_core.js] IIFE for Aros.Core executed, returning object.');
     return {
         // Constants
         SCRIPT_VERSION,
@@ -365,4 +370,10 @@ Aros.Core = (function() {
         waitForElement,
         init
     };
-})(); 
+})();
+console.log('[aros_core.js] Script end (top level). Aros.Core type:', typeof Aros.Core, '; Aros.Core defined:', Aros.Core ? 'Yes' : 'No');
+if (window.Aros && Aros.Core) {
+    console.log('[aros_core.js] Aros.Core defined. Keys:', Object.keys(Aros.Core).join(', '));
+} else {
+    console.error('[aros_core.js] Aros.Core is NOT defined after execution.');
+} 

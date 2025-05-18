@@ -3,8 +3,14 @@
  * Handles prompt submission, queueing, and processing
  */
 
-const ArosPrompt = (function() {
+console.log('[aros_prompt.js] Script start (top level).');
+window.Aros = window.Aros || {};
+console.log('[aros_prompt.js] Aros namespace ensured (top level). Current Aros keys:', window.Aros ? Object.keys(window.Aros).join(', ') : 'Aros undefined');
+
+console.log('[aros_prompt.js] Attempting to define Aros.Prompt...');
+Aros.Prompt = (function() {
     'use strict';
+    console.log('[aros_prompt.js] IIFE for Aros.Prompt executing.');
     
     // --- Core Prompt Functions ---
     async function submitPrompt(promptText, isAutoMode = true) {
@@ -76,12 +82,17 @@ const ArosPrompt = (function() {
     
     // --- Module Initialization ---
     function init() {
-        ArosCore.log("Initializing Prompt Module...");
-        // Any initialization code for prompt module
-        ArosCore.log("Prompt Module Initialized.");
+        if (Aros.Core && Aros.Core.log) {
+            Aros.Core.log("Initializing Prompt Module...");
+            Aros.Core.log("Prompt Module Initialized.");
+        } else {
+            console.log("[Aros Prompt Internal] Initializing Prompt Module... (Aros.Core.log not available)");
+            console.log("[Aros Prompt Internal] Prompt Module Initialized. (Aros.Core.log not available)");
+        }
     }
     
     // --- Public API ---
+    console.log('[aros_prompt.js] IIFE for Aros.Prompt executed, returning object.');
     return {
         submitPrompt,
         pasteSinglePersistedImage,
@@ -98,4 +109,10 @@ const ArosPrompt = (function() {
         handleLoadExample,
         init
     };
-})(); 
+})();
+console.log('[aros_prompt.js] Script end (top level). Aros.Prompt type:', typeof Aros.Prompt, '; Aros.Prompt defined:', Aros.Prompt ? 'Yes' : 'No');
+if (window.Aros && Aros.Prompt) {
+    console.log('[aros_prompt.js] Aros.Prompt defined. Keys:', Object.keys(Aros.Prompt).join(', '));
+} else {
+    console.error('[aros_prompt.js] Aros.Prompt is NOT defined after execution.');
+} 

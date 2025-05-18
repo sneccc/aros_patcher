@@ -9,7 +9,7 @@
 // @match        *://www.sora.*.com/*
 // @match        *://sora.*.com/*
 // @match        https://sora.chatgpt.com/*
-// @grant        none
+// @grant        GM_info
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js
 // @require      https://raw.githubusercontent.com/sneccc/aros_patcher/refs/heads/main/modules/aros_core.js
 // @require      https://raw.githubusercontent.com/sneccc/aros_patcher/refs/heads/main/modules/aros_ui.js
@@ -18,15 +18,17 @@
 // @require      https://raw.githubusercontent.com/sneccc/aros_patcher/refs/heads/main/modules/wildcards.js
 // ==/UserScript==
 
-// Initialize the global Aros namespace if it doesn't exist
+console.log('[aros_main.js] Script start (top level).');
 window.Aros = window.Aros || {};
+console.log('[aros_main.js] Aros namespace ensured (top level). Initial Aros object keys:', window.Aros ? Object.keys(window.Aros).join(', ') : 'Aros undefined');
 
 (function() {
     'use strict';
+    console.log('[aros_main.js] Main IIFE executing.');
     
     // Define a simple logging function
     function log(message) {
-        console.log(`[Aros Patcher v6.0] ${message}`);
+        console.log(`[Aros Patcher v6.0 Main] ${message}`);
     }
     
     // Log startup
@@ -58,6 +60,7 @@ window.Aros = window.Aros || {};
     // Initialize the application when the DOM is fully loaded
     document.addEventListener('DOMContentLoaded', function() {
         log('DOM content loaded, checking modules...');
+        console.log('[aros_main.js] Current Aros object keys at DOMContentLoaded:', window.Aros ? Object.keys(window.Aros).join(', ') : 'Aros undefined');
         
         // Check if all required modules are loaded
         if (!areModulesLoaded()) {
@@ -67,8 +70,8 @@ window.Aros = window.Aros || {};
         
         // Only proceed if Core module is available
         if (!Aros.Core) {
-            log('❌ Critical error: Core module not loaded. Script cannot initialize.');
-            alert('Aros Patcher Error: Core module failed to load. Please check your connection to GitHub and reload the page.');
+            log('❌ Critical error: Core module (Aros.Core) not loaded. Script cannot initialize.');
+            alert('Aros Patcher Error: Core module failed to load. Please check your connection to GitHub and reload the page. Open console (F12) for details.');
             return;
         }
         
@@ -80,6 +83,7 @@ window.Aros = window.Aros || {};
             // Wait for necessary elements to be available
             Aros.Core.waitForElement('main, div[role="dialog"]', function() {
                 log('✅ Required page elements found');
+                console.log('[aros_main.js] Aros.Core.waitForElement callback. Aros object keys:', window.Aros ? Object.keys(window.Aros).join(', ') : 'Aros undefined');
                 
                 try {
                     // Initialize UI

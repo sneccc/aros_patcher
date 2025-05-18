@@ -3,8 +3,14 @@
  * Handles image selection, download, and find similar functionality
  */
 
-const ArosImage = (function() {
+console.log('[aros_image.js] Script start (top level).');
+window.Aros = window.Aros || {};
+console.log('[aros_image.js] Aros namespace ensured (top level). Current Aros keys:', window.Aros ? Object.keys(window.Aros).join(', ') : 'Aros undefined');
+
+console.log('[aros_image.js] Attempting to define Aros.Image...');
+Aros.Image = (function() {
     'use strict';
+    console.log('[aros_image.js] IIFE for Aros.Image executing.');
     
     // Private variables
     let imageObserver = null;
@@ -58,24 +64,41 @@ const ArosImage = (function() {
     
     // --- Module Initialization ---
     function init() {
-        ArosCore.log("Initializing Image Module...");
+        if (Aros.Core && Aros.Core.log) {
+            Aros.Core.log("Initializing Image Module...");
+        } else {
+            console.log("[Aros Image Internal] Initializing Image Module... (Aros.Core.log not available)");
+        }
         
         // Initial image scan
-        ArosCore.log("Performing initial image scan...");
+        if (Aros.Core && Aros.Core.log) {
+            Aros.Core.log("Performing initial image scan...");
+        } else {
+            console.log("[Aros Image Internal] Performing initial image scan... (Aros.Core.log not available)");
+        }
         let initialImages = 0;
         document.querySelectorAll('div[data-index] a > img, div[style*="top:"][style*="left:"] img, .group\\/tile img').forEach(img => {
             insertCheckbox(img);
             initialImages++;
         });
-        ArosCore.log(`Initial image scan complete. Processed ${initialImages} images.`);
+        if (Aros.Core && Aros.Core.log) {
+            Aros.Core.log(`Initial image scan complete. Processed ${initialImages} images.`);
+        } else {
+            console.log(`[Aros Image Internal] Initial image scan complete. Processed ${initialImages} images. (Aros.Core.log not available)`);
+        }
         
         // Setup image observer
         setupImageObserver();
         
-        ArosCore.log("Image Module Initialized.");
+        if (Aros.Core && Aros.Core.log) {
+            Aros.Core.log("Image Module Initialized.");
+        } else {
+            console.log("[Aros Image Internal] Image Module Initialized. (Aros.Core.log not available)");
+        }
     }
     
     // --- Public API ---
+    console.log('[aros_image.js] IIFE for Aros.Image executed, returning object.');
     return {
         handleImageError,
         insertCheckbox,
@@ -85,4 +108,10 @@ const ArosImage = (function() {
         handleDocumentClickForSimilar,
         init
     };
-})(); 
+})();
+console.log('[aros_image.js] Script end (top level). Aros.Image type:', typeof Aros.Image, '; Aros.Image defined:', Aros.Image ? 'Yes' : 'No');
+if (window.Aros && Aros.Image) {
+    console.log('[aros_image.js] Aros.Image defined. Keys:', Object.keys(Aros.Image).join(', '));
+} else {
+    console.error('[aros_image.js] Aros.Image is NOT defined after execution.');
+} 

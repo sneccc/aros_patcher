@@ -4,11 +4,15 @@
  */
 
 // Initialize the global Aros namespace if it doesn't exist
+console.log('[wildcards.js] Script start (top level).');
 window.Aros = window.Aros || {};
+console.log('[wildcards.js] Aros namespace ensured (top level). Current Aros keys:', window.Aros ? Object.keys(window.Aros).join(', ') : 'Aros undefined');
 
 // Create the Wildcards module within the Aros namespace
+console.log('[wildcards.js] Attempting to define Aros.Wildcards...');
 Aros.Wildcards = (function() {
     'use strict';
+    console.log('[wildcards.js] IIFE for Aros.Wildcards executing.');
     
     // Wildcards for Aros Patcher
     const wildcards = {
@@ -210,11 +214,12 @@ Aros.Wildcards = (function() {
         if (Aros.Core && Aros.Core.log) {
             Aros.Core.log("Wildcards Module Initialized");
         } else {
-            console.log("[Aros Wildcards] Module Initialized");
+            console.log("[Aros Wildcards Internal] Module Initialized (Aros.Core.log not available)");
         }
     }
     
     // Public API
+    console.log('[wildcards.js] IIFE for Aros.Wildcards executed, returning object.');
     return {
         wildcards,
         getRandomValue,
@@ -225,4 +230,10 @@ Aros.Wildcards = (function() {
         getRandomExample,
         init
     };
-})(); 
+})();
+console.log('[wildcards.js] Script end (top level). Aros.Wildcards type:', typeof Aros.Wildcards, '; Aros.Wildcards defined:', Aros.Wildcards ? 'Yes' : 'No');
+if (window.Aros && Aros.Wildcards) {
+    console.log('[wildcards.js] Aros.Wildcards defined. Keys:', Object.keys(Aros.Wildcards).join(', '));
+} else {
+    console.error('[wildcards.js] Aros.Wildcards is NOT defined after execution.');
+} 

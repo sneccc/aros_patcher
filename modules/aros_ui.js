@@ -3,8 +3,14 @@
  * Handles UI creation, styling, and interactions
  */
 
-const ArosUI = (function() {
+console.log('[aros_ui.js] Script start (top level).');
+window.Aros = window.Aros || {};
+console.log('[aros_ui.js] Aros namespace ensured (top level). Current Aros keys:', window.Aros ? Object.keys(window.Aros).join(', ') : 'Aros undefined');
+
+console.log('[aros_ui.js] Attempting to define Aros.UI...');
+Aros.UI = (function() {
     'use strict';
+    console.log('[aros_ui.js] IIFE for Aros.UI executing.');
     
     // Private variables
     let stylesInjected = false;
@@ -121,12 +127,17 @@ const ArosUI = (function() {
     
     // --- Module Initialization ---
     function init() {
-        ArosCore.log("Initializing UI Module...");
-        // Any initialization code for UI module
-        ArosCore.log("UI Module Initialized.");
+        if (Aros.Core && Aros.Core.log) {
+            Aros.Core.log("Initializing UI Module...");
+            Aros.Core.log("UI Module Initialized.");
+        } else {
+            console.log("[Aros UI Internal] Initializing UI Module... (Aros.Core.log not available)");
+            console.log("[Aros UI Internal] UI Module Initialized. (Aros.Core.log not available)");
+        }
     }
     
     // --- Public API ---
+    console.log('[aros_ui.js] IIFE for Aros.UI executed, returning object.');
     return {
         createUI,
         showOverlay,
@@ -146,4 +157,10 @@ const ArosUI = (function() {
         toggleWildcardMode,
         init
     };
-})(); 
+})();
+console.log('[aros_ui.js] Script end (top level). Aros.UI type:', typeof Aros.UI, '; Aros.UI defined:', Aros.UI ? 'Yes' : 'No');
+if (window.Aros && Aros.UI) {
+    console.log('[aros_ui.js] Aros.UI defined. Keys:', Object.keys(Aros.UI).join(', '));
+} else {
+    console.error('[aros_ui.js] Aros.UI is NOT defined after execution.');
+} 
