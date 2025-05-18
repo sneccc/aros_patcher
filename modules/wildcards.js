@@ -3,7 +3,11 @@
  * Contains wildcard definitions and utility functions for random generation
  */
 
-const ArosWildcards = (function() {
+// Initialize the global Aros namespace if it doesn't exist
+window.Aros = window.Aros || {};
+
+// Create the Wildcards module within the Aros namespace
+Aros.Wildcards = (function() {
     'use strict';
     
     // Wildcards for Aros Patcher
@@ -155,8 +159,10 @@ const ArosWildcards = (function() {
 
     // Generate multiple prompts from a template with variables and wildcards
     function generatePrompts(promptTemplate, count = 1) {
-        if (typeof ArosCore !== 'undefined') {
-            ArosCore.log(`Generating ${count} prompts from template: "${promptTemplate.substring(0, 50)}..."`);
+        if (Aros.Core && Aros.Core.log) {
+            Aros.Core.log(`Generating ${count} prompts from template: "${promptTemplate.substring(0, 50)}..."`);
+        } else {
+            console.log(`[Aros Wildcards] Generating ${count} prompts from template: "${promptTemplate.substring(0, 50)}..."`);
         }
         
         // First, process the template to get all possible combinations
@@ -201,8 +207,10 @@ const ArosWildcards = (function() {
     
     // Module initialization
     function init() {
-        if (typeof ArosCore !== 'undefined') {
-            ArosCore.log("Wildcards Module Initialized");
+        if (Aros.Core && Aros.Core.log) {
+            Aros.Core.log("Wildcards Module Initialized");
+        } else {
+            console.log("[Aros Wildcards] Module Initialized");
         }
     }
     

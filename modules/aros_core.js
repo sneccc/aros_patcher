@@ -3,7 +3,11 @@
  * Contains essential variables, logging, and utility functions
  */
 
-const ArosCore = (function() {
+// Initialize the global Aros namespace if it doesn't exist
+window.Aros = window.Aros || {};
+
+// Create the Core module within the Aros namespace
+Aros.Core = (function() {
     'use strict';
     
     // --- Global Variables ---
@@ -214,7 +218,13 @@ const ArosCore = (function() {
                     // Reset flags immediately to prevent double calls before disconnect
                     _generationIndicatorRemoved = false;
                     _newImagesAppeared = false;
-                    ArosPrompt.handleGenerationComplete(); // Trigger the next step in Auto Mode
+                    
+                    // Call handleGenerationComplete if Prompt module is available
+                    if (Aros.Prompt && Aros.Prompt.handleGenerationComplete) {
+                        Aros.Prompt.handleGenerationComplete();
+                    } else {
+                        log("ERROR: Prompt module not available to handle generation completion");
+                    }
                 }
             });
         }
