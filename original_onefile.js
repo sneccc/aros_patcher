@@ -2211,7 +2211,7 @@
                 log(`➡️ [handleGeneratePrompts] Original template from textarea: "${template}"`);
 
                 wildcardTemplate = template;
-                        const countInput = document.getElementById('sora-prompt-count');
+                const countInput = document.getElementById('sora-prompt-count');
                 const count = parseInt(countInput.value);
                 if (isNaN(count) || count < 1 || count > 100) {
                     log(`Invalid prompt count (${countInput.value}), using default of 10.`);
