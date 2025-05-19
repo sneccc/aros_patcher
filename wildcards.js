@@ -37,7 +37,7 @@ const wildcardUtils = {
 
     // Function to parse and expand variations like [option1, option2, option3]
     _expandVariations: function(template) {
-        const variationRegex = /\\\[([^\\\]]+)\\\]/g; // Matches [option1, option2]
+        const variationRegex = /\[([^\]]+)\]/g; // Fixed: removed escape characters
         let prompts = [template];
         let match;
 
@@ -88,25 +88,18 @@ const wildcardUtils = {
 
                 let currentPrompt = basePrompt;
                 const wildcardRegex = /__([a-zA-Z0-9_]+)__/g; // Matches __wildcard__
-                let safetyNet = 0; // To prevent infinite loop on a single prompt generation with bad wildcards
-
-                // Iteratively replace wildcards until none are left or safetyNet is too high
-                while (wildcardRegex.test(currentPrompt) && safetyNet < 50) {
-                    safetyNet++;
-                    currentPrompt = currentPrompt.replace(wildcardRegex, (match, categoryName) => {
-                        categoryName = categoryName.toLowerCase();
-                        if (this.categories[categoryName] && this.categories[categoryName].length > 0) {
-                            return this.getRandomElement(this.categories[categoryName]);
-                        }
-                        // If category not found or empty, return the wildcard itself to avoid breaking the prompt
-                        // or to allow for user-defined placeholders that aren't in the list
-                        console.warn(`Wildcard category "${categoryName}" not found or empty. Keeping placeholder.`);
-                        return match;
-                    });
-                }
-                if (safetyNet >= 50) {
-                    console.warn(`Reached safetyNet limit for prompt: "${basePrompt}". Some wildcards might remain.`);
-                }
+                
+                // Fixed: Use String.replace with callback to handle all wildcards at once
+                currentPrompt = currentPrompt.replace(wildcardRegex, (match, categoryName) => {
+                    categoryName = categoryName.toLowerCase();
+                    if (this.categories[categoryName] && this.categories[categoryName].length > 0) {
+                        return this.getRandomElement(this.categories[categoryName]);
+                    }
+                    // If category not found or empty, return the wildcard itself
+                    console.warn(`Wildcard category "${categoryName}" not found or empty. Keeping placeholder.`);
+                    return match;
+                });
+                
                 generatedPrompts.add(currentPrompt.trim());
             }
         }
