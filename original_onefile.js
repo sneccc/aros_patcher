@@ -358,13 +358,130 @@
                 if (countEl) {
                     countEl.textContent = `(${persistedImages.length} persisted)`;
                 }
+                
+                // Update preview gallery visibility
+                const previewEl = document.getElementById('sora-persisted-preview');
+                if (previewEl) {
+                    if (persistedImages.length > 0) {
+                        previewEl.style.display = 'flex';
+                        const emptyMsg = previewEl.querySelector('.sora-empty-gallery');
+                        if (emptyMsg) emptyMsg.style.display = 'none';
+                    } else {
+                        const emptyMsg = previewEl.querySelector('.sora-empty-gallery');
+                        if (emptyMsg) emptyMsg.style.display = 'block';
+                    }
+                }
             }
 
             function handlePersistImagesToggle(event) {
                 isImagePersistenceEnabled = event.target.checked;
                 log(`Image persistence toggled to: ${isImagePersistenceEnabled}`);
-                // User might want to keep images in memory if they accidentally toggle.
-                // If they explicitly clear or stop, images will be cleared then.
+                
+                // Show/hide the preview gallery based on persistence setting
+                const previewEl = document.getElementById('sora-persisted-preview');
+                if (previewEl) {
+                    if (isImagePersistenceEnabled && persistedImages.length > 0) {
+                        previewEl.style.display = 'flex';
+                    } else if (!isImagePersistenceEnabled) {
+                        previewEl.style.display = 'none';
+                    }
+                }
+            }
+            
+            // NEW: Function to create and add an image thumbnail to the preview gallery
+            function addImageToPreviewGallery(imageFile, index) {
+                const previewEl = document.getElementById('sora-persisted-preview');
+                if (!previewEl) return;
+                
+                // Create a container for the thumbnail
+                const thumbContainer = document.createElement('div');
+                thumbContainer.className = 'sora-image-thumb';
+                thumbContainer.dataset.index = index;
+                thumbContainer.style.cssText = 'position: relative; width: 40px; height: 40px; border-radius: 4px; overflow: hidden; background: rgba(0,0,0,0.3);';
+                
+                // Create the image element
+                const img = document.createElement('img');
+                img.style.cssText = 'width: 100%; height: 100%; object-fit: cover;';
+                img.title = imageFile.name;
+                
+                // Create a delete button
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'sora-thumb-delete';
+                deleteBtn.innerHTML = '×';
+                deleteBtn.style.cssText = 'position: absolute; top: 0; right: 0; background: rgba(0,0,0,0.6); color: white; border: none; width: 16px; height: 16px; line-height: 14px; font-size: 14px; font-weight: bold; cursor: pointer; border-radius: 0 0 0 4px;';
+                deleteBtn.title = 'Remove this image';
+                
+                // Add event listener to the delete button
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    removePersistedImage(parseInt(thumbContainer.dataset.index));
+                });
+                
+                // Set image source from the File object
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(imageFile);
+                
+                // Add elements to the DOM
+                thumbContainer.appendChild(img);
+                thumbContainer.appendChild(deleteBtn);
+                previewEl.appendChild(thumbContainer);
+                
+                // Make sure the empty message is hidden
+                const emptyMsg = previewEl.querySelector('.sora-empty-gallery');
+                if (emptyMsg) emptyMsg.style.display = 'none';
+                
+                // Show the preview gallery
+                previewEl.style.display = 'flex';
+            }
+            
+            // NEW: Function to remove an image from persistedImages and update the UI
+            function removePersistedImage(index) {
+                if (index < 0 || index >= persistedImages.length) return;
+                
+                log(`Removing persisted image at index ${index}: ${persistedImages[index].name}`);
+                
+                // Remove the image from the array
+                persistedImages.splice(index, 1); // Remove 1 element at index
+                
+                // Reset current index if needed
+                if (currentPersistentImageIndex >= persistedImages.length) {
+                    currentPersistentImageIndex = 0;
+                }
+                
+                // Update the UI
+                refreshImagePreviewGallery();
+                updatePersistedImageCountUI();
+            }
+            
+            // NEW: Function to refresh the entire image preview gallery
+            function refreshImagePreviewGallery() {
+                const previewEl = document.getElementById('sora-persisted-preview');
+                if (!previewEl) return;
+                
+                // Clear current thumbnails
+                const currentThumbs = previewEl.querySelectorAll('.sora-image-thumb');
+                currentThumbs.forEach(thumb => thumb.remove());
+                
+                // Recreate all thumbnails
+                persistedImages.forEach((imageFile, index) => {
+                    addImageToPreviewGallery(imageFile, index);
+                });
+                
+                // Show/hide empty message
+                const emptyMsg = previewEl.querySelector('.sora-empty-gallery');
+                if (emptyMsg) {
+                    emptyMsg.style.display = persistedImages.length === 0 ? 'block' : 'none';
+                }
+                
+                // Show/hide the gallery
+                if (persistedImages.length > 0 && isImagePersistenceEnabled) {
+                    previewEl.style.display = 'flex';
+                } else {
+                    previewEl.style.display = 'none';
+                }
             }
 
             // Function to paste a single persisted image - inspired by clipboard_paste_toy.js
@@ -597,13 +714,23 @@
                     <!-- === END Copied Row === -->
 
                     <!-- === NEW: Image Persistence Row === -->
-                    <div id="sora-persistence-controls" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; margin-top: -5px; gap: 15px;">
+                    <div id="sora-persistence-controls" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; margin-top: -5px; gap: 15px;">
                         <label title="If checked, any images you paste into the prompt list will be re-pasted for every subsequent prompt in the current run." style="display: flex; align-items: center; gap: 7px; font-size: 13px; color: #d0d0d0; cursor: pointer;">
                             <input type="checkbox" id="sora-persist-images-checkbox" style="transform: scale(1.1); cursor: pointer; accent-color: #4a90e2;"/> 📷 Persist Images
                         </label>
                         <button id="sora-paste-all-images" title="Paste all persisted images into the current Aros prompt" style="background: rgba(60, 130, 250, 0.5); color: white; padding: 4px 10px; border: 1px solid rgba(60, 130, 250, 0.6); border-radius: 8px; cursor: pointer; font-size: 12px; white-space: nowrap;">Paste All Images</button>
                         <span id="sora-persisted-count" style="font-size: 12px; color: #bdbdbd; white-space: nowrap;">(0 persisted)</span>
                     </div>
+                    
+                    <!-- NEW: Image Preview Gallery -->
+                    <div id="sora-persisted-preview" style="display: none; flex-wrap: wrap; gap: 8px; margin-bottom: 15px; max-height: 100px; overflow-y: auto; background: rgba(0, 0, 0, 0.2); padding: 8px; border-radius: 8px; align-items: flex-start; min-height: 32px;">
+                        <!-- Thumbnail previews will be added here dynamically -->
+                        <div class="sora-empty-gallery" style="width: 100%; text-align: center; color: #888; font-size: 12px; padding: 5px;">
+                            No images persisted yet. Paste an image into the text area above.
+                        </div>
+                    </div>
+                    <!-- END: Image Preview Gallery -->
+                    
                     <!-- === END Image Persistence Row === -->
 
                     <div style="display: flex; gap: 10px; margin-bottom: 20px;"> <button id="sora-start" style=" flex: 1; background: rgba(60, 130, 250, 0.5); backdrop-filter: blur(5px) saturate(150%); -webkit-backdrop-filter: blur(5px) saturate(150%); color: white; padding: 10px; border: 1px solid rgba(60, 130, 250, 0.6); border-radius: 10px; cursor: pointer; font-weight: 500; transition: background-color 0.2s ease, border-color 0.2s ease; ">▶ Start (0)</button> <button id="sora-clear" style=" flex: 1; background: rgba(80, 80, 80, 0.5); backdrop-filter: blur(5px) saturate(150%); -webkit-backdrop-filter: blur(5px) saturate(150%); color: #d0d0d0; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 10px; cursor: pointer; transition: background-color 0.2s ease, border-color 0.2s ease; " onmouseover="this.style.backgroundColor='rgba(100, 100, 100, 0.6)'; this.style.borderColor='rgba(255, 255, 255, 0.2)'" onmouseout="this.style.backgroundColor='rgba(80, 80, 80, 0.5)'; this.style.borderColor='rgba(255, 255, 255, 0.15)'">🗑️ Clear</button> </div>
@@ -612,7 +739,8 @@
                     <hr style="border: none; border-top: 1px solid rgba(255, 255, 255, 0.08); margin: 18px 0;" />
                     <div style="font-size: 13px; color: #bdbdbd; margin-bottom: 10px; font-weight: 400;">Crop option for download:</div> <div id="sora-crop-options" style="display: flex; flex-direction: row; flex-wrap: wrap; gap: 15px; margin-bottom: 15px;"> <label style="display: flex; align-items: center; gap: 5px; font-size: 13px; color: #d0d0d0; cursor: pointer;"> <input type="radio" name="sora-crop-option" value="none" checked style="cursor: pointer; accent-color: #4a90e2; transform: scale(1.1);" /> Original </label> <label style="display: flex; align-items: center; gap: 5px; font-size: 13px; color: #d0d0d0; cursor: pointer;"> <input type="radio" name="sora-crop-option" value="16:9" style="cursor: pointer; accent-color: #4a90e2; transform: scale(1.1);" /> 16:9 </label> <label style="display: flex; align-items: center; gap: 5px; font-size: 13px; color: #d0d0d0; cursor: pointer;"> <input type="radio" name="sora-crop-option" value="9:16" style="cursor: pointer; accent-color: #4a90e2; transform: scale(1.1);" /> 9:16 </label> <label style="display: flex; align-items: center; gap: 5px; font-size: 13px; color: #d0d0d0; cursor: pointer;"> <input type="radio" name="sora-crop-option" value="1:1" style="cursor: pointer; accent-color: #4a90e2; transform: scale(1.1);" /> 1:1 </label> </div>
                     <div style="display: flex; gap: 10px; margin-top: 20px; align-items: stretch;"> <button id="sora-download-images" style=" flex-grow: 1; background: rgba(46, 160, 67, 0.5); backdrop-filter: blur(5px) saturate(150%); -webkit-backdrop-filter: blur(5px) saturate(150%); color: white; padding: 11px; border: 1px solid rgba(46, 160, 67, 0.6); border-radius: 10px; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: background-color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease; font-weight: 500; " onmouseover="if(!this.disabled) { this.style.backgroundColor='rgba(46, 160, 67, 0.7)'; this.style.borderColor='rgba(46, 160, 67, 0.8)'; }" onmouseout="if(!this.disabled) { this.style.backgroundColor='rgba(46, 160, 67, 0.5)'; this.style.borderColor='rgba(46, 160, 67, 0.6)'; }"> <svg id="sora-download-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16" style="display: inline;"> <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/> <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z"/> </svg> <span id="sora-download-text">Download (0)</span> </button> <button id="sora-find-similar-button" title="Activate find similar image mode" style=" flex-shrink: 0; background: rgba(80, 80, 90, 0.5); backdrop-filter: blur(5px) saturate(150%); -webkit-backdrop-filter: blur(5px) saturate(150%); color: white; padding: 11px 14px; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 10px; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; transition: background-color 0.2s ease, border-color 0.2s ease; " onmouseover="if(!this.classList.contains('active')) { this.style.backgroundColor='rgba(100, 100, 110, 0.6)'; this.style.borderColor='rgba(255, 255, 255, 0.2)'; }" onmouseout="if(!this.classList.contains('active')) { this.style.backgroundColor='rgba(80, 80, 90, 0.5)'; this.style.borderColor='rgba(255, 255, 255, 0.15)'; }"> <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-cursor-fill" viewBox="0 0 16 16"> <path d="M14.082 2.182a.5.5 0 0 1 .103.557L8.528 15.467a.5.5 0 0 1-.917-.007L5.57 10.694.803 8.652a.5.5 0 0 1-.006-.916l12.728-5.657a.5.5 0 0 1 .556.103z"/> </svg> </button> </div>
-                    <style> #sora-download-images:disabled { background: rgba(80, 80, 80, 0.3) !important; border-color: rgba(255, 255, 255, 0.08) !important; color: rgba(255, 255, 255, 0.4) !important; backdrop-filter: blur(2px) saturate(100%); -webkit-backdrop-filter: blur(2px) saturate(100%); opacity: 0.6; cursor: not-allowed; } #sora-find-similar-button.active { background-color: rgba(60, 130, 250, 0.65) !important; border-color: rgba(60, 130, 250, 0.8) !important; } </style>
+                    <style> #sora-download-images:disabled { background: rgba(80, 80, 80, 0.3) !important; border-color: rgba(255, 255, 255, 0.08) !important; color: rgba(255, 255, 255, 0.4) !important; backdrop-filter: blur(2px) saturate(100%); -webkit-backdrop-filter: blur(2px) saturate(100%); opacity: 0.6; cursor: not-allowed; } #sora-find-similar-button.active { background-color: rgba(60, 130, 250, 0.65) !important; border-color: rgba(60, 130, 250, 0.8) !important; } 
+                    .sora-thumb-delete:hover { background: rgba(255, 50, 50, 0.8) !important; } </style>
                     <div id="sora-download-progress" style="display: none;"></div>
                     <div id="sora-download-error" style="font-size: 11px; color: #ff8a8a; text-align: center; margin-top: 5px; font-weight: 400;"></div>
                 `;
@@ -682,6 +810,17 @@
                 toggleCooldownInputState();
                 updateStartButtonPromptCount();
                 updatePersistedImageCountUI(); // Initialize persisted image count display
+                
+                // Initialize the preview gallery display
+                const previewEl = document.getElementById('sora-persisted-preview');
+                if (previewEl) {
+                    if (persistedImages.length > 0 && isImagePersistenceEnabled) {
+                        previewEl.style.display = 'flex';
+                    } else {
+                        previewEl.style.display = 'none';
+                    }
+                }
+                
                 createAuxiliaryUI(); // Creates aux UI and overlay placeholder
                 log("Auxiliary UI and Overlay created.");
             }
@@ -737,6 +876,8 @@
 
                     if (isImagePersistenceEnabled) {
                         persistedImages.push(imageFile);
+                        // Add the image to the preview gallery
+                        addImageToPreviewGallery(imageFile, persistedImages.length - 1);
                         log(`Image "${imageFile.name}" added to persistent store. Total persisted: ${persistedImages.length}`);
                         updatePersistedImageCountUI();
                         // Reset index when images are updated
@@ -859,6 +1000,7 @@
                 persistedImages = [];
                 currentPersistentImageIndex = 0;
                 log(`PERSISTENCE: Reset current image index to 0 after clearing persisted images.`);
+                refreshImagePreviewGallery(); // Refresh the gallery
                 updatePersistedImageCountUI();
                 log("Persisted images cleared.");
             }
@@ -917,6 +1059,9 @@
                 originalPromptList = []; // << Reset original list (from 5.7)
                 totalPromptCount = 0;    // Reset cycle count
                 totalPromptsSentLoop = 0;// << Reset total loop count (from 5.7)
+                
+                // Make sure preview gallery reflects current state
+                refreshImagePreviewGallery();
 
                 setTimeout(() => {
                     if (!isRunning) { // Check again
