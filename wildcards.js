@@ -23,7 +23,8 @@ const wildcardUtils = {
         "A __animal__ wearing a [hat, scarf, glasses] in a __location__.",
         "__time__ scene with a __weather__ effect and a __color__ __object__.",
         "Multiple [red, blue, green] __animal__s in a __style__ __location__.",
-        "A __material__ __object__ showing a __emotion__, __camera__ shot with __lighting__."
+        "A __material__ __object__ showing a __emotion__, __camera__ shot with __lighting__.",
+        "Generate a [delicate, ornate, minimalist, sculptural] __color__ __object__ made of shiny porcelain, with [floral, geometric, abstract, figurative] intricate details, __lighting__ enhancing the reflective surface, displayed in a __location__, photographed with __camera__ technique, __style__ aesthetic."
     ],
 
     getRandomElement: function(arr) {

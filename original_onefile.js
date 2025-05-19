@@ -2405,8 +2405,19 @@
                         throw new Error('Wildcard utilities not loaded correctly.');
                     }
                     
-                    // Get a random example template
-                    const exampleTemplate = wildcardUtils.getRandomExample();
+                    // Check if there's a URL parameter for a specific template type
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const templateType = urlParams.get('template');
+                    
+                    let exampleTemplate;
+                    
+                    // Custom template for porcelain if requested
+                    if (templateType === 'porcelain') {
+                        exampleTemplate = "Generate a [delicate, ornate, minimalist, sculptural] __color__ __object__ made of shiny porcelain, with [floral, geometric, abstract, figurative] intricate details, __lighting__ enhancing the reflective surface, displayed in a __location__, photographed with __camera__ technique, __style__ aesthetic.";
+                    } else {
+                        // Get a random example template
+                        exampleTemplate = wildcardUtils.getRandomExample();
+                    }
                     
                     // Set it in the textarea
                     document.getElementById('sora-input').value = exampleTemplate;
