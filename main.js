@@ -29,88 +29,100 @@
 (function () {
     'use strict';
 
+    window.Aros = window.Aros || {};
+    Aros.Utils = Aros.Utils || {}; // Assume utils.js will populate this
+    Aros.Constants = Aros.Constants || {}; // Assume constants.js will populate this
+    Aros.UI = Aros.UI || {};
+    Aros.CoreLogic = Aros.CoreLogic || {};
+    Aros.ImagePersistence = Aros.ImagePersistence || {};
+    Aros.DOMUtils = Aros.DOMUtils || {};
+    Aros.ImageManagement = Aros.ImageManagement || {};
+    Aros.FindSimilar = Aros.FindSimilar || {};
+    Aros.WildcardIntegration = Aros.WildcardIntegration || {};
+    Aros.Observers = Aros.Observers || {};
+    Aros.WildcardUtils = Aros.WildcardUtils || {};
+
+
     // --- Global State Variables ---
-    let promptQueue = [];
-    let originalPromptList = [];
-    let totalPromptCount = 0;
-    let totalPromptsSentLoop = 0;
-    let isRunning = false;
-    let isLooping = false;
-    let isGenerating = false;
-    let cooldownTime = 130; // Default manual cooldown, used by ui.js for initial display
-    let autoSubmitTimeoutId = null;
-    let generationTimeoutId = null;
-    let manualTimerTimeoutId = null;
-    let visualCountdownInterval = null;
-    let selectedImageUrls = new Set();
-    let isDownloading = false;
-    let downloadErrors = 0;
-    let isFindSimilarModeActive = false;
-    
-    // Observer-related state flags (used by observers.js, managed here or in core_logic.js)
-    let _generationIndicatorRemoved = false;
-    let _newImagesAppeared = false;
+    Aros.state = {
+        promptQueue: [],
+        originalPromptList: [],
+        totalPromptCount: 0,
+        totalPromptsSentLoop: 0,
+        isRunning: false,
+        isLooping: false,
+        isGenerating: false,
+        cooldownTime: 130, // Default manual cooldown, used by ui.js for initial display
+        autoSubmitTimeoutId: null,
+        generationTimeoutId: null,
+        manualTimerTimeoutId: null,
+        visualCountdownInterval: null,
+        selectedImageUrls: new Set(),
+        isDownloading: false,
+        downloadErrors: 0,
+        isFindSimilarModeActive: false,
+        _generationIndicatorRemoved: false,
+        _newImagesAppeared: false,
+        isWildcardMode: false, // Used by ui.js for initial placeholder
+        wildcardTemplate: "",
+        generatedPromptCount: 10, // Used by ui.js for initial display
+        persistedImages: [],
+        isImagePersistenceEnabled: false,
+        currentPersistentImageIndex: 0,
+        isPastingSequence: false,
+        sequentialPasteTimeoutId: null
+    };
 
-    // Wildcard feature state
-    let isWildcardMode = false; // Used by ui.js for initial placeholder
-    let wildcardTemplate = "";
-    let generatedPromptCount = 10; // Used by ui.js for initial display
-
-    // Image Persistence state
-    let persistedImages = [];
-    let isImagePersistenceEnabled = false;
-    let currentPersistentImageIndex = 0;
-    let isPastingSequence = false;
-    let sequentialPasteTimeoutId = null;
+    Aros.methods = {};
 
     // --- Button Handler Functions ---
-    function handleLoopToggle(event) {
-        log(`Loop checkbox toggled to: ${event.target.checked}.`);
-        isLooping = event.target.checked; // Update global state
-        updateStartButtonPromptCount(); // from ui.js
+    Aros.methods.handleLoopToggle = function (event) {
+        Aros.Utils.log(`Loop checkbox toggled to: ${event.target.checked}.`);
+        Aros.state.isLooping = event.target.checked; // Update global state
+        Aros.UI.updateStartButtonPromptCount();
     }
 
-    function handlePersistImagesToggle(event) {
-        isImagePersistenceEnabled = event.target.checked;
-        log(`Image persistence toggled to: ${isImagePersistenceEnabled}`);
-        updatePersistedImageCountUI(); // from ui.js
+    Aros.methods.handlePersistImagesToggle = function (event) {
+        Aros.state.isImagePersistenceEnabled = event.target.checked;
+        Aros.Utils.log(`Image persistence toggled to: ${Aros.state.isImagePersistenceEnabled}`);
+        Aros.UI.updatePersistedImageCountUI();
     }
 
-    function handleStart() {
-        log("Start button clicked.");
-        currentPersistentImageIndex = 0;
+    Aros.methods.handleStart = function () {
+        Aros.Utils.log("Start button clicked.");
+        Aros.state.currentPersistentImageIndex = 0;
 
         const input = document.getElementById('sora-input').value;
-        const prompts = input.split(PROMPT_DELIMITER).map(x => x.trim()).filter(Boolean);
+        const prompts = input.split(Aros.Constants.PROMPT_DELIMITER).map(x => x.trim()).filter(Boolean);
         const isAuto = document.getElementById('sora-auto-submit-checkbox')?.checked ?? false;
-        // isLooping is already set by its handler
+        // Aros.state.isLooping is already set by its handler
 
-        totalPromptsSentLoop = 0;
-        let currentCooldown = cooldownTime; // Use the global cooldownTime
+        Aros.state.totalPromptsSentLoop = 0;
+        let currentCooldown = Aros.state.cooldownTime;
 
         if (prompts.length === 0) {
-            return alert(`❗ Please enter at least 1 prompt. Use ${PROMPT_DELIMITER} to separate.`);
+            return alert(`❗ Please enter at least 1 prompt. Use ${Aros.Constants.PROMPT_DELIMITER} to separate.`);
         }
-        if (isRunning) return;
+        if (Aros.state.isRunning) return;
 
         if (!isAuto) {
             const cooldownInputVal = parseInt(document.getElementById('sora-cooldown-time').value);
-            currentCooldown = isNaN(cooldownInputVal) ? cooldownTime : Math.max(1, cooldownInputVal);
-            cooldownTime = currentCooldown; // Update global cooldownTime if changed
+            currentCooldown = isNaN(cooldownInputVal) ? Aros.state.cooldownTime : Math.max(1, cooldownInputVal);
+            Aros.state.cooldownTime = currentCooldown;
         }
 
-        log(`Starting process with ${prompts.length} prompts. Mode: ${isAuto ? 'Auto' : 'Manual'}. Loop: ${isLooping}.`);
-        promptQueue = [...prompts];
-        if (isLooping) {
-            originalPromptList = [...prompts];
+        Aros.Utils.log(`Starting process with ${prompts.length} prompts. Mode: ${isAuto ? 'Auto' : 'Manual'}. Loop: ${Aros.state.isLooping}.`);
+        Aros.state.promptQueue = [...prompts];
+        if (Aros.state.isLooping) {
+            Aros.state.originalPromptList = [...prompts];
         } else {
-            originalPromptList = [];
+            Aros.state.originalPromptList = [];
         }
-        totalPromptCount = prompts.length;
-        isRunning = true;
-        isGenerating = false;
+        Aros.state.totalPromptCount = prompts.length;
+        Aros.state.isRunning = true;
+        Aros.state.isGenerating = false;
 
-        showOverlay(); // from ui.js
+        Aros.UI.showOverlay();
 
         const mainUI = document.getElementById('sora-auto-ui');
         if (mainUI) {
@@ -124,52 +136,52 @@
         const auxContainer = document.getElementById('sora-aux-controls-container');
         const progressEl = document.getElementById('sora-progress');
         const cooldownEl = document.getElementById('sora-cooldown');
-        const stopBtnUI = document.getElementById('sora-stop-button'); // Renamed to avoid conflict
+        const stopBtnUI = document.getElementById('sora-stop-button');
         if (auxContainer) auxContainer.style.display = 'flex';
         if (progressEl) progressEl.style.display = 'inline-block';
         if (cooldownEl) cooldownEl.style.display = isAuto ? 'none' : 'inline-block';
         if (stopBtnUI) stopBtnUI.style.display = 'inline-block';
         
-        updateProgress(); // from core_logic.js
+        Aros.CoreLogic.updateProgress();
 
         if (isAuto) {
-            startAutoLoop(); // from core_logic.js
+            Aros.CoreLogic.startAutoLoop();
         } else {
-            startManualTimerLoop(currentCooldown); // from core_logic.js
+            Aros.CoreLogic.startManualTimerLoop(currentCooldown);
         }
     }
 
-    function handleClear() {
-        log("Clear button clicked.");
+    Aros.methods.handleClear = function () {
+        Aros.Utils.log("Clear button clicked.");
         document.getElementById('sora-input').value = '';
-        updateStartButtonPromptCount(); // from ui.js
+        Aros.UI.updateStartButtonPromptCount();
         
-        stopSequentialPaste(); // from image_persistence.js
+        Aros.ImagePersistence.stopSequentialPaste();
 
-        persistedImages = [];
-        currentPersistentImageIndex = 0;
-        updatePersistedImageCountUI(); // from ui.js
-        log("Persisted images cleared.");
+        Aros.state.persistedImages = [];
+        Aros.state.currentPersistentImageIndex = 0;
+        Aros.UI.updatePersistedImageCountUI();
+        Aros.Utils.log("Persisted images cleared.");
     }
 
-    function handleClose() {
-        log("Close button clicked.");
+    Aros.methods.handleClose = function () {
+        Aros.Utils.log("Close button clicked.");
         const wrapper = document.getElementById('sora-auto-ui');
         if (!wrapper) return;
         wrapper.style.opacity = '0';
         wrapper.style.transform = 'scale(0.95)';
         setTimeout(() => {
             wrapper.style.display = 'none';
-            if (!isRunning) {
+            if (!Aros.state.isRunning) {
                 const miniBtn = document.getElementById('sora-minibtn');
                 if (miniBtn) miniBtn.style.display = 'block';
             }
         }, 300);
     }
 
-    function handleMiniButtonClick() {
-        log("Mini button clicked.");
-        if (!isRunning) {
+    Aros.methods.handleMiniButtonClick = function () {
+        Aros.Utils.log("Mini button clicked.");
+        if (!Aros.state.isRunning) {
             const wrapper = document.getElementById('sora-auto-ui');
             const miniBtn = document.getElementById('sora-minibtn');
             if (wrapper) {
@@ -181,49 +193,49 @@
             if (miniBtn) miniBtn.style.display = 'none';
             const auxContainer = document.getElementById('sora-aux-controls-container');
             if (auxContainer) auxContainer.style.display = 'none';
-            hideOverlay(); // from ui.js
+            Aros.UI.hideOverlay();
         }
     }
 
-    function handleStop() {
-        log("Stop button clicked.");
-        currentPersistentImageIndex = 0;
-        if (!isRunning) return;
+    Aros.methods.handleStop = function () {
+        Aros.Utils.log("Stop button clicked.");
+        Aros.state.currentPersistentImageIndex = 0;
+        if (!Aros.state.isRunning) return;
 
-        isRunning = false;
-        isGenerating = false;
-        isLooping = false;
-        _generationIndicatorRemoved = false;
-        _newImagesAppeared = false;
+        Aros.state.isRunning = false;
+        Aros.state.isGenerating = false;
+        Aros.state.isLooping = false;
+        Aros.state._generationIndicatorRemoved = false;
+        Aros.state._newImagesAppeared = false;
         
-        stopSequentialPaste(); // from image_persistence.js
+        Aros.ImagePersistence.stopSequentialPaste();
 
-        completionObserver?.disconnect(); // completionObserver from observers.js (global scope)
+        Aros.Observers.completionObserver?.disconnect();
 
-        if (autoSubmitTimeoutId) { clearTimeout(autoSubmitTimeoutId); autoSubmitTimeoutId = null; }
-        if (generationTimeoutId) { clearTimeout(generationTimeoutId); generationTimeoutId = null; }
-        if (manualTimerTimeoutId) { clearTimeout(manualTimerTimeoutId); manualTimerTimeoutId = null; }
-        if (visualCountdownInterval) { clearInterval(visualCountdownInterval); visualCountdownInterval = null; }
+        if (Aros.state.autoSubmitTimeoutId) { clearTimeout(Aros.state.autoSubmitTimeoutId); Aros.state.autoSubmitTimeoutId = null; }
+        if (Aros.state.generationTimeoutId) { clearTimeout(Aros.state.generationTimeoutId); Aros.state.generationTimeoutId = null; }
+        if (Aros.state.manualTimerTimeoutId) { clearTimeout(Aros.state.manualTimerTimeoutId); Aros.state.manualTimerTimeoutId = null; }
+        if (Aros.state.visualCountdownInterval) { clearInterval(Aros.state.visualCountdownInterval); Aros.state.visualCountdownInterval = null; }
 
-        hideOverlay(); // from ui.js
+        Aros.UI.hideOverlay();
         const cooldownBtn = document.getElementById('sora-cooldown');
         if (cooldownBtn) {
             cooldownBtn.textContent = '⏱ Cooldown: --s';
             cooldownBtn.style.display = 'none';
         }
         
-        updateProgress(); // from core_logic.js - will update text to "Stopped"
+        Aros.CoreLogic.updateProgress();
 
-        if (promptQueue.length > 0) {
-            saveRemainingPromptsToFile(); // from core_logic.js
+        if (Aros.state.promptQueue.length > 0) {
+            Aros.CoreLogic.saveRemainingPromptsToFile();
         }
-        promptQueue = [];
-        originalPromptList = [];
-        totalPromptCount = 0;
-        totalPromptsSentLoop = 0;
+        Aros.state.promptQueue = [];
+        Aros.state.originalPromptList = [];
+        Aros.state.totalPromptCount = 0;
+        Aros.state.totalPromptsSentLoop = 0;
 
         setTimeout(() => {
-            if (!isRunning) {
+            if (!Aros.state.isRunning) {
                 const auxContainer = document.getElementById('sora-aux-controls-container');
                 if (auxContainer) auxContainer.style.display = 'none';
                 const miniBtn = document.getElementById('sora-minibtn');
@@ -231,14 +243,14 @@
                 if (miniBtn && (!mainUI || mainUI.style.display === 'none')) {
                     miniBtn.style.display = 'block';
                 }
-                updateStartButtonPromptCount(); // from ui.js
+                Aros.UI.updateStartButtonPromptCount();
             }
-        }, 4000); // Delay matches original logic for progress message visibility
+        }, 4000);
     }
 
     // --- Initialization ---
-    function waitForElement(selector, callback, timeout = 20000) {
-        log(`Waiting for element: "${selector}" (timeout: ${timeout/1000}s)`);
+    Aros.methods.waitForElement = function (selector, callback, timeout = 20000) {
+        Aros.Utils.log(`Waiting for element: "${selector}" (timeout: ${timeout/1000}s)`);
         let checkCount = 0;
         const intervalTime = 500;
         const maxChecks = timeout / intervalTime;
@@ -247,118 +259,122 @@
             const el = document.querySelector(selector);
             if (el) {
                 clearInterval(interval);
-                log(`Element found: "${selector}". Initializing script...`);
+                Aros.Utils.log(`Element found: "${selector}". Initializing script...`);
                 try {
                     callback(el);
                 } catch (e) {
-                    log("FATAL ERROR during initialization callback:"); console.error(e);
+                    Aros.Utils.log("FATAL ERROR during initialization callback:"); console.error(e);
                     alert("Fatal error during Aros Patcher script initialization. Check Console.");
                 }
             } else if (checkCount >= maxChecks) {
                 clearInterval(interval);
-                log(`ERROR: Element "${selector}" not found. Script cannot initialize UI.`);
+                Aros.Utils.log(`ERROR: Element "${selector}" not found. Script cannot initialize UI.`);
                 alert(`Aros Patcher: Important element "${selector}" not found.`);
             }
         }, intervalTime);
     }
 
-    log("Aros Patcher (Modular) script starting...");
+    // Ensure Aros.Utils.log is available or provide a fallback if utils.js hasn't loaded/defined it yet
+    // This is a temporary safeguard. Ideally, utils.js (and other @require) sets up its namespace parts correctly.
+    if (typeof Aros.Utils.log !== 'function') {
+        Aros.Utils.log = console.log; // Fallback
+        console.log("Aros.Utils.log was not defined, using console.log as fallback for early logs.");
+    }
+    
+    Aros.Utils.log("Aros Patcher (Modular) script starting...");
     if (typeof JSZip === 'undefined') {
-        log("FATAL ERROR: JSZip library not loaded.");
+        Aros.Utils.log("FATAL ERROR: JSZip library not loaded.");
         alert("Critical Error: JSZip library not loaded for Aros Patcher.");
         return;
     }
-    if (typeof wildcardUtils === 'undefined') {
-        // This check might be too early if wildcards.js is loaded via @require and hasn't executed yet.
-        // However, functions from it are called later.
-        log("INFO: wildcardUtils might not be loaded yet, will be checked upon use.");
+    // Assuming wildcardUtils will be on Aros.WildcardUtils after wildcards.js is loaded
+    if (typeof Aros.WildcardUtils === 'undefined' || typeof Aros.WildcardUtils.generatePromptsWithWildcards !== 'function') {
+        Aros.Utils.log("INFO: Aros.WildcardUtils might not be loaded yet or fully initialized, will be checked upon use.");
     }
 
 
-    waitForElement('main, div[role="dialog"]', (commonElement) => {
+    Aros.methods.waitForElement('main, div[role="dialog"]', (commonElement) => {
         try {
-            log("Core element found. Initializing Aros Patcher modules...");
+            Aros.Utils.log("Core element found. Initializing Aros Patcher modules...");
 
             // Initial DOM modifications
-            removeNativeCheckboxes(); // from dom_utils.js
-            removeNativeSelectionIndicators(); // from dom_utils.js
+            Aros.DOMUtils.removeNativeCheckboxes();
+            Aros.DOMUtils.removeNativeSelectionIndicators();
 
             // Create UI
-            // Globals like cooldownTime, generatedPromptCount, isWildcardMode are used by createUI
-            createUI(); // from ui.js (also creates auxiliary UI and overlay placeholder via createAuxiliaryUI)
-            hideOverlay(); // from ui.js - ensure it's hidden initially
+            // Globals like Aros.state.cooldownTime, Aros.state.generatedPromptCount, Aros.state.isWildcardMode are used by createUI
+            Aros.UI.createUI(); 
+            Aros.UI.hideOverlay();
             
             // Attach Event Listeners to UI elements
-            document.getElementById('sora-start').addEventListener('click', handleStart);
-            document.getElementById('sora-clear').addEventListener('click', handleClear);
-            document.getElementById('sora-close').addEventListener('click', handleClose);
-            document.getElementById('sora-download-images').addEventListener('click', handleDownload); // from image_management.js
-            document.getElementById('sora-find-similar-button').addEventListener('click', toggleFindSimilarMode); // from find_similar.js
+            document.getElementById('sora-start').addEventListener('click', Aros.methods.handleStart);
+            document.getElementById('sora-clear').addEventListener('click', Aros.methods.handleClear);
+            document.getElementById('sora-close').addEventListener('click', Aros.methods.handleClose);
+            document.getElementById('sora-download-images').addEventListener('click', Aros.ImageManagement.handleDownload);
+            document.getElementById('sora-find-similar-button').addEventListener('click', Aros.FindSimilar.toggleFindSimilarMode);
             
-            document.getElementById('sora-select-horizontal').addEventListener('change', updateImageSelection); // from ui.js
-            document.getElementById('sora-select-vertical').addEventListener('change', updateImageSelection);   // from ui.js
-            document.getElementById('sora-select-square').addEventListener('change', updateImageSelection);     // from ui.js
+            document.getElementById('sora-select-horizontal').addEventListener('change', Aros.UI.updateImageSelection);
+            document.getElementById('sora-select-vertical').addEventListener('change', Aros.UI.updateImageSelection);
+            document.getElementById('sora-select-square').addEventListener('change', Aros.UI.updateImageSelection);
             
-            document.getElementById('sora-auto-submit-checkbox').addEventListener('input', toggleCooldownInputState); // from ui.js
-            document.getElementById('sora-loop-checkbox').addEventListener('change', handleLoopToggle);
-            document.getElementById('sora-input').addEventListener('input', updateStartButtonPromptCount); // from ui.js
+            document.getElementById('sora-auto-submit-checkbox').addEventListener('input', Aros.UI.toggleCooldownInputState);
+            document.getElementById('sora-loop-checkbox').addEventListener('change', Aros.methods.handleLoopToggle);
+            document.getElementById('sora-input').addEventListener('input', Aros.UI.updateStartButtonPromptCount);
 
             // Wildcard UI listeners
-            document.getElementById('sora-mode-normal').addEventListener('click', () => toggleInputMode(false)); // from ui.js
-            document.getElementById('sora-mode-wildcard').addEventListener('click', () => toggleInputMode(true)); // from ui.js
-            document.getElementById('sora-generate-prompts').addEventListener('click', handleGeneratePrompts); // from wildcard_integration.js
-            document.getElementById('sora-load-example').addEventListener('click', handleLoadExample);       // from wildcard_integration.js
+            document.getElementById('sora-mode-normal').addEventListener('click', () => Aros.UI.toggleInputMode(false));
+            document.getElementById('sora-mode-wildcard').addEventListener('click', () => Aros.UI.toggleInputMode(true));
+            document.getElementById('sora-generate-prompts').addEventListener('click', Aros.WildcardIntegration.handleGeneratePrompts);
+            document.getElementById('sora-load-example').addEventListener('click', Aros.WildcardIntegration.handleLoadExample);
 
             // Image Persistence UI listeners
-            document.getElementById('sora-persist-images-checkbox').addEventListener('change', handlePersistImagesToggle);
-            document.getElementById('sora-paste-all-images').addEventListener('click', handlePasteAllImages); // from image_persistence.js
+            document.getElementById('sora-persist-images-checkbox').addEventListener('change', Aros.methods.handlePersistImagesToggle);
+            document.getElementById('sora-paste-all-images').addEventListener('click', Aros.ImagePersistence.handlePasteAllImages);
             
-            // Attach listener for simulated image paste to script's textarea
             const scriptInputTextarea = document.getElementById('sora-input');
             if (scriptInputTextarea) {
-                scriptInputTextarea.addEventListener('paste', handleSimulatedImagePaste); // from image_persistence.js
+                scriptInputTextarea.addEventListener('paste', Aros.ImagePersistence.handleSimulatedImagePaste);
             }
             
             // Aux UI listeners
-            document.getElementById('sora-stop-button').onclick = handleStop;
-            document.getElementById('sora-minibtn').onclick = handleMiniButtonClick;
+            document.getElementById('sora-stop-button').onclick = Aros.methods.handleStop;
+            document.getElementById('sora-minibtn').onclick = Aros.methods.handleMiniButtonClick;
 
-            makeUIDraggable(); // from ui.js - make the panel draggable
+            Aros.UI.makeUIDraggable();
 
             // Initial state updates
-            toggleCooldownInputState(); // from ui.js
-            updateStartButtonPromptCount(); // from ui.js
-            updatePersistedImageCountUI(); // from ui.js
+            Aros.UI.toggleCooldownInputState();
+            Aros.UI.updateStartButtonPromptCount();
+            Aros.UI.updatePersistedImageCountUI();
             
-            log("Performing initial image scan...");
-            document.querySelectorAll('div[data-index] a > img, div[style*="top:"][style*="left:"] img, .group\\/tile img').forEach(img => {
-                insertCheckbox(img); // from image_management.js
+            Aros.Utils.log("Performing initial image scan...");
+            document.querySelectorAll('div[data-index] a > img, div[style*="top:"][style*="left:"] img, .group\/tile img').forEach(img => {
+                Aros.ImageManagement.insertCheckbox(img);
             });
-            updateSelectedCount(); // from ui.js
+            Aros.UI.updateSelectedCount();
 
             // Initialize and Start Observers
-            initializeImageObserver();    // from observers.js
-            initializeCompletionObserver(); // from observers.js
+            Aros.Observers.initializeImageObserver();    
+            Aros.Observers.initializeCompletionObserver();
 
             const observerTarget = document.querySelector('[data-testid="virtuoso-scroller"] > div, main div[class*="grid"], div[role="dialog"] div.flex.h-full.flex-col') ?? document.body;
-            if (imageObserver && observerTarget) {
-                imageObserver.observe(observerTarget, { childList: true, subtree: true });
-                log(`Image Observer started on ${observerTarget.tagName}.`);
+            if (Aros.Observers.imageObserver && observerTarget) { // Assumes imageObserver is exposed on Aros.Observers
+                Aros.Observers.imageObserver.observe(observerTarget, { childList: true, subtree: true });
+                Aros.Utils.log(`Image Observer started on ${observerTarget.tagName}.`);
             } else {
-                log("WARNING: Could not find specific image grid container for ImageObserver.");
+                Aros.Utils.log("WARNING: Could not find specific image grid container for ImageObserver.");
             }
-            if(completionObserver) {
-                 log("Completion Observer initialized (for Auto Mode).");
+            if(Aros.Observers.completionObserver) { // Assumes completionObserver is exposed on Aros.Observers
+                 Aros.Utils.log("Completion Observer initialized (for Auto Mode).");
             }
-
 
             // Global click listener for "Find Similar"
-            document.addEventListener('click', handleDocumentClickForSimilar, true); // from find_similar.js
+            document.addEventListener('click', Aros.FindSimilar.handleDocumentClickForSimilar, true);
 
-            log("Aros Patcher (Modular) initialization complete.");
+            Aros.Utils.log("Aros Patcher (Modular) initialization complete.");
 
         } catch (e) {
-            log("FATAL ERROR during Aros Patcher (Modular) main initialization:");
+            Aros.Utils.log("FATAL ERROR during Aros Patcher (Modular) main initialization:");
             console.error(e);
             alert("A critical error occurred during Aros Patcher initialization. Check Console (F12).");
         }
