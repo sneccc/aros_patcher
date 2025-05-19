@@ -2155,6 +2155,12 @@
 
         // --- NEW: Toggle Input Mode Function ---
         function toggleInputMode(isWildcard) {
+            if (isWildcard && typeof wildcardUtils === 'undefined') {
+                alert('Wildcard functionality is unavailable because the supporting library (wildcards.js) could not be loaded. Please check the @require URL for wildcards.js in the script header.');
+                log("Attempted to switch to Wildcard mode, but wildcardUtils is not loaded. Preventing switch.");
+                return; // Prevent switching to wildcard mode
+            }
+
             isWildcardMode = isWildcard;
             const normalModeBtn = document.getElementById('sora-mode-normal');
             const wildcardModeBtn = document.getElementById('sora-mode-wildcard');
