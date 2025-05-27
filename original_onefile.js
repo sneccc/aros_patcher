@@ -43,7 +43,7 @@
             let originalBodyOverflow = '';
             let originalHtmlOverflow = '';
             let stylesInjected = false;
-            const SCRIPT_VERSION = "5.9"; // Updated version
+            const SCRIPT_VERSION = "6.8"; // Updated version with direct textarea manipulation for remix mode
             const SCRIPT_CHECKBOX_MARKER = 'data-auto-sora-cb'; // From 5.5.5
             const NATIVE_INDICATOR_SELECTOR = 'div.absolute.left-2.top-2'; // From 5.5.5
             const PROMPT_DELIMITER = '@@@@@'; // <<< ADDED: Define the delimiter
@@ -52,6 +52,12 @@
             let isWildcardMode = false;     // Toggle for wildcard mode
             let wildcardTemplate = "";      // Store the current wildcard template
             let generatedPromptCount = 10;  // Default number of prompts to generate
+
+            // --- NEW: Remix Mode Variables ---
+            let isRemixMode = false;        // Toggle for remix mode
+            let isWaitingForRemix = false;  // Flag to track if we're waiting for remix button to appear
+            let remixObserver = null;       // Observer to watch for remix button availability
+            let remixTimeoutId = null;      // Timeout for remix button waiting
 
             // --- NEW: Image Persistence Globals ---
             let persistedImages = []; // Array to store File objects for persistent pasting
@@ -150,7 +156,7 @@
                 pageOverlayElement.id = 'sora-page-overlay';
                 pageOverlayElement.style.cssText = `
                     position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-                    background-color: rgba(0, 0, 0, 0.45); z-index: 999990;
+                    background-color: rgba(0, 0, 0, 0.45); z-index: 99999990;
                     opacity: 0; transition: opacity 0.3s ease;
                     backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
                     display: flex; flex-direction: column; justify-content: center;
@@ -629,11 +635,13 @@
             function createUI() {
                 log("Creating main UI...");
                 const wrapper = document.createElement('div'); wrapper.id = 'sora-auto-ui';
-                wrapper.style.cssText = `position: fixed; bottom: 15px; left: 20px; background: rgba(35, 35, 40, 0.65); backdrop-filter: blur(10px) saturate(180%); -webkit-backdrop-filter: blur(10px) saturate(180%); padding: 20px 20px 15px 20px; border-radius: 16px; z-index: 999999; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37); width: 330px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; border: 1px solid rgba(255, 255, 255, 0.12); color: #e0e0e0; transition: opacity 0.3s ease, transform 0.3s ease; opacity: 1; transform: scale(1); display: block;`;
+                wrapper.style.cssText = `position: fixed; bottom: 15px; left: 20px; background: rgba(35, 35, 40, 0.65); backdrop-filter: blur(10px) saturate(180%); -webkit-backdrop-filter: blur(10px) saturate(180%); padding: 20px 20px 15px 20px; border-radius: 16px; z-index: 99999999; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37); width: 330px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; border: 1px solid rgba(255, 255, 255, 0.12); color: #e0e0e0; transition: opacity 0.3s ease, transform 0.3s ease; opacity: 1; transform: scale(1); display: block; pointer-events: auto;`;
 
                 // --- UPDATED textarea placeholder text ---
                 const placeholderText = isWildcardMode ? 
                     `Enter a template with wildcards like __color__ and variations like [option1, option2].\nExamples:\nA __animal__ in a __location__ at __time__\nA [red, blue, green] __object__ with __material__ texture` :
+                    isRemixMode ?
+                    `Enter prompts for remixing existing generations.\nExample:\ngenerate a wolf on the same style\n${PROMPT_DELIMITER}\nmake it more colorful\n${PROMPT_DELIMITER}\nadd a forest background...\nPress 'E' to trigger remix manually.` :
                     `Enter prompts, separated by a line containing ${PROMPT_DELIMITER}\nExample:\nPrompt 1 Line 1\nPrompt 1 Line 2\n${PROMPT_DELIMITER}\nPrompt 2\n${PROMPT_DELIMITER}\nPrompt 3...\nEnable 'Loop' to repeat.\nPaste images here (enable 'Persist Images' to reuse).`;
 
                 // --- UPDATED wrapper innerHTML to include wildcard mode switch ---
@@ -644,8 +652,9 @@
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                         <label style="font-size: 13px; color: #bdbdbd; font-weight: 400; white-space: nowrap;">Input Mode:</label>
                         <div style="display: flex; background: rgba(0, 0, 0, 0.25); border-radius: 10px; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.1);">
-                            <button id="sora-mode-normal" class="mode-button mode-active" style="padding: 6px 10px; font-size: 12px; border: none; cursor: pointer; background: transparent; color: #e0e0e0; transition: background-color 0.2s ease;">Normal</button>
-                            <button id="sora-mode-wildcard" class="mode-button" style="padding: 6px 10px; font-size: 12px; border: none; cursor: pointer; background: transparent; color: #e0e0e0; transition: background-color 0.2s ease;">Wildcard</button>
+                            <button id="sora-mode-normal" class="mode-button mode-active" style="padding: 6px 8px; font-size: 11px; border: none; cursor: pointer; background: transparent; color: #e0e0e0; transition: background-color 0.2s ease;">Normal</button>
+                            <button id="sora-mode-wildcard" class="mode-button" style="padding: 6px 8px; font-size: 11px; border: none; cursor: pointer; background: transparent; color: #e0e0e0; transition: background-color 0.2s ease;">Wildcard</button>
+                            <button id="sora-mode-remix" class="mode-button" style="padding: 6px 8px; font-size: 11px; border: none; cursor: pointer; background: transparent; color: #e0e0e0; transition: background-color 0.2s ease;">Remix</button>
                         </div>
                     </div>
                     
@@ -750,11 +759,15 @@
 
                 // Add event listeners for wildcard mode
                 document.getElementById('sora-mode-normal').addEventListener('click', () => {
-                    toggleInputMode(false);
+                    toggleInputMode('normal');
                 });
                 
                 document.getElementById('sora-mode-wildcard').addEventListener('click', () => {
-                    toggleInputMode(true);
+                    toggleInputMode('wildcard');
+                });
+
+                document.getElementById('sora-mode-remix').addEventListener('click', () => {
+                    toggleInputMode('remix');
                 });
 
                 document.getElementById('sora-generate-prompts').addEventListener('click', handleGeneratePrompts);
@@ -829,9 +842,9 @@
             function createAuxiliaryUI() {
                 log("Creating auxiliary UI (progress, cooldown, stop)...");
                 const auxContainer = document.createElement('div'); auxContainer.id = 'sora-aux-controls-container';
-                auxContainer.style.cssText = `position: fixed; bottom: 15px; left: 20px; z-index: 999998; display: none; align-items: center; gap: 10px; transition: opacity 0.3s ease; opacity: 1;`;
+                auxContainer.style.cssText = `position: fixed; bottom: 15px; left: 20px; z-index: 99999998; display: none; align-items: center; gap: 10px; transition: opacity 0.3s ease; opacity: 1; pointer-events: auto;`;
                 const glassItemStyle = `background: rgba(45, 45, 50, 0.7); backdrop-filter: blur(8px) saturate(150%); -webkit-backdrop-filter: blur(8px) saturate(150%); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 8px 14px; font-size: 13px; color: #d5d5d5; display: none; white-space: nowrap; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2); transition: background-color 0.2s ease, border-color 0.2s ease;`; const progress = document.createElement('div'); progress.id = 'sora-progress'; progress.style.cssText = glassItemStyle; progress.textContent = 'Processing...'; auxContainer.appendChild(progress); const cooldownBtn = document.createElement('button'); cooldownBtn.id = 'sora-cooldown'; cooldownBtn.style.cssText = glassItemStyle + `cursor: default;`; cooldownBtn.textContent = `⏱ Cooldown: --s`; auxContainer.appendChild(cooldownBtn); const stopBtn = document.createElement('button'); stopBtn.id = 'sora-stop-button'; stopBtn.style.cssText = glassItemStyle + `background: rgba(200, 50, 60, 0.7); border-color: rgba(255, 99, 132, 0.4); color: white; cursor: pointer; font-weight: 500;`; stopBtn.textContent = '🛑 Stop'; stopBtn.title = 'Stop sending prompts and save remaining ones'; stopBtn.onclick = handleStop; stopBtn.onmouseover = function () { this.style.backgroundColor = 'rgba(220, 53, 69, 0.8)'; this.style.borderColor = 'rgba(255, 99, 132, 0.6)'; }; stopBtn.onmouseout = function () { this.style.backgroundColor = 'rgba(200, 50, 60, 0.7)'; this.style.borderColor = 'rgba(255, 99, 132, 0.4)'; }; auxContainer.appendChild(stopBtn); document.body.appendChild(auxContainer);
-                const miniBtn = document.createElement('div'); miniBtn.id = 'sora-minibtn'; miniBtn.style.cssText = `position: fixed; bottom: 15px; left: 20px; width: 16px; height: 16px; background: rgba(255, 255, 255, 0.8); border-radius: 50%; cursor: pointer; z-index: 999999; box-shadow: 0 0 8px rgba(255, 255, 255, 0.5); display: none; border: 1px solid rgba(255, 255, 255, 0.3); transition: background-color 0.2s ease;`; miniBtn.onmouseover = function () { this.style.backgroundColor = 'rgba(255, 255, 255, 1)'; }; miniBtn.onmouseout = function () { this.style.backgroundColor = 'rgba(255, 255, 255, 0.8)'; }; miniBtn.title = 'Reopen Aros Patcher'; miniBtn.onclick = handleMiniButtonClick; document.body.appendChild(miniBtn);
+                const miniBtn = document.createElement('div'); miniBtn.id = 'sora-minibtn'; miniBtn.style.cssText = `position: fixed; bottom: 15px; left: 20px; width: 16px; height: 16px; background: rgba(255, 255, 255, 0.8); border-radius: 50%; cursor: pointer; z-index: 99999999; box-shadow: 0 0 8px rgba(255, 255, 255, 0.5); display: none; border: 1px solid rgba(255, 255, 255, 0.3); transition: background-color 0.2s ease; pointer-events: auto;`; miniBtn.onmouseover = function () { this.style.backgroundColor = 'rgba(255, 255, 255, 1)'; }; miniBtn.onmouseout = function () { this.style.backgroundColor = 'rgba(255, 255, 255, 0.8)'; }; miniBtn.title = 'Reopen Aros Patcher'; miniBtn.onclick = handleMiniButtonClick; document.body.appendChild(miniBtn);
                 log("Auxiliary UI appended to body.");
                 createOverlay(); // Create overlay element now
             }
@@ -974,10 +987,21 @@
 
                 updateProgress(); // Update initial progress text
 
-                if (isAuto) {
-                    startAutoLoop();
+                // Check if we're in remix mode and use appropriate start functions
+                if (isRemixMode) {
+                    log("Remix mode detected. Starting remix workflow.");
+                    if (isAuto) {
+                        startRemixLoop();
+                    } else {
+                        startManualRemixLoop(currentCooldown);
+                    }
                 } else {
-                    startManualTimerLoop(currentCooldown);
+                    // Normal or wildcard mode
+                    if (isAuto) {
+                        startAutoLoop();
+                    } else {
+                        startManualTimerLoop(currentCooldown);
+                    }
                 }
             }
 
@@ -2300,6 +2324,11 @@
                     // Add the global click listener for the "Find Similar" feature
                     document.addEventListener('click', handleDocumentClickForSimilar, true); // Use capture phase
                     log("Added global click listener for Find Similar mode."); // Log from 5.7
+                    
+                    // Add keyboard listener for remix mode 'E' key
+                    document.addEventListener('keydown', handleKeyboardShortcuts, true);
+                    log("Added global keyboard listener for remix mode shortcuts.");
+                    
                     log("Initialization complete."); // Log from 5.7
 
                 } catch (e) { // Use more robust error handling from 5.7
@@ -2310,32 +2339,53 @@
             });
 
             // --- NEW: Toggle Input Mode Function ---
-            function toggleInputMode(isWildcard) {
-                if (isWildcard && typeof wildcardUtils === 'undefined') {
+            function toggleInputMode(mode) {
+                if (mode === 'wildcard' && typeof wildcardUtils === 'undefined') {
                     alert('Wildcard functionality is unavailable because the supporting library (wildcards.js) could not be loaded. Please check the @require URL for wildcards.js in the script header.');
                     log("Attempted to switch to Wildcard mode, but wildcardUtils is not loaded. Preventing switch.");
                     return; // Prevent switching to wildcard mode
                 }
 
-                isWildcardMode = isWildcard;
+                // Reset all mode flags
+                isWildcardMode = false;
+                isRemixMode = false;
+
+                // Set the appropriate mode
+                if (mode === 'wildcard') {
+                    isWildcardMode = true;
+                } else if (mode === 'remix') {
+                    isRemixMode = true;
+                }
+
                 const normalModeBtn = document.getElementById('sora-mode-normal');
                 const wildcardModeBtn = document.getElementById('sora-mode-wildcard');
+                const remixModeBtn = document.getElementById('sora-mode-remix');
                 const wildcardControls = document.getElementById('sora-wildcard-controls');
                 const textareaLabel = document.getElementById('textarea-label');
                 const textarea = document.getElementById('sora-input');
                 
-                // Update button styles
+                // Reset all button styles
+                [normalModeBtn, wildcardModeBtn, remixModeBtn].forEach(btn => {
+                    if (btn) {
+                        btn.classList.remove('mode-active');
+                        btn.style.backgroundColor = 'transparent';
+                    }
+                });
+                
+                // Update UI based on selected mode
                 if (isWildcardMode) {
-                    normalModeBtn.classList.remove('mode-active');
-                    normalModeBtn.style.backgroundColor = 'transparent';
                     wildcardModeBtn.classList.add('mode-active');
                     wildcardModeBtn.style.backgroundColor = 'rgba(60, 130, 250, 0.3)';
                     wildcardControls.style.display = 'block';
                     textareaLabel.textContent = 'Enter prompt template with wildcards:';
                     textarea.placeholder = 'Enter a template with wildcards like __color__ and variations like [option1, option2].\nExamples:\nA __animal__ in a __location__ at __time__\nA [red, blue, green] __object__ with __material__ texture';
-                } else {
-                    wildcardModeBtn.classList.remove('mode-active');
-                    wildcardModeBtn.style.backgroundColor = 'transparent';
+                } else if (isRemixMode) {
+                    remixModeBtn.classList.add('mode-active');
+                    remixModeBtn.style.backgroundColor = 'rgba(60, 130, 250, 0.3)';
+                    wildcardControls.style.display = 'none';
+                    textareaLabel.textContent = 'Enter prompts for remixing:';
+                    textarea.placeholder = `Enter prompts for remixing existing generations.\nExample:\ngenerate a wolf on the same style\n${PROMPT_DELIMITER}\nmake it more colorful\n${PROMPT_DELIMITER}\nadd a forest background...\nPress 'E' to trigger remix manually.`;
+                } else { // normal mode
                     normalModeBtn.classList.add('mode-active');
                     normalModeBtn.style.backgroundColor = 'rgba(60, 130, 250, 0.3)';
                     wildcardControls.style.display = 'none';
@@ -2343,7 +2393,7 @@
                     textarea.placeholder = `Enter prompts, separated by a line containing ${PROMPT_DELIMITER}\nExample:\nPrompt 1 Line 1\nPrompt 1 Line 2\n${PROMPT_DELIMITER}\nPrompt 2\n${PROMPT_DELIMITER}\nPrompt 3...\nEnable 'Loop' to repeat.\nPaste images here (enable 'Persist Images' to reuse).`;
                 }
                 
-                log(`Input mode switched to ${isWildcardMode ? 'wildcard' : 'normal'} mode`);
+                log(`Input mode switched to ${mode} mode`);
             }
 
             // --- NEW: Handle Generate Prompts Function ---
@@ -2383,7 +2433,7 @@
                     const formattedResult = generatedPrompts.join(`\n${PROMPT_DELIMITER}\n`);
                     
                     // Switch back to normal mode to display generated prompts
-                    toggleInputMode(false);
+                    toggleInputMode('normal');
                     
                     // Display the generated prompts
                     document.getElementById('sora-input').value = formattedResult;
@@ -2426,6 +2476,893 @@
                 } catch (error) {
                     log(`ERROR loading example: ${error.message}`);
                     alert(`Error loading example: ${error.message}`);
+                }
+            }
+
+            // --- NEW: Remix Mode Functions ---
+            function findRemixButton() {
+                // Look for the "Edit remix" button based on the provided HTML structure
+                const remixButtons = document.querySelectorAll('button');
+                for (const button of remixButtons) {
+                    const textDiv = button.querySelector('div.w-full.truncate');
+                    if (textDiv && textDiv.textContent.trim() === 'Edit remix') {
+                        return button;
+                    }
+                }
+                return null;
+            }
+
+            function findRemixSubmitButton() {
+                // Look for the "Remix" submit button
+                const buttons = document.querySelectorAll('button[data-disabled="false"]');
+                for (const button of buttons) {
+                    if (button.textContent.trim() === 'Remix') {
+                        return button;
+                    }
+                }
+                return null;
+            }
+
+            function isRemixButtonAvailable() {
+                const remixBtn = findRemixButton();
+                return remixBtn && remixBtn.getAttribute('data-disabled') === 'false';
+            }
+
+            async function clickRemixButton() {
+                const remixBtn = findRemixButton();
+                if (!remixBtn) {
+                    log("ERROR: Remix button not found");
+                    return false;
+                }
+
+                if (remixBtn.getAttribute('data-disabled') === 'true') {
+                    log("Remix button found but disabled, waiting...");
+                    return false;
+                }
+
+                log("Clicking remix button...");
+                
+                // Try React handler first, then fallback to regular click
+                const btnKey = Object.keys(remixBtn).find(k => k.startsWith("__reactProps$"));
+                if (btnKey && remixBtn[btnKey]?.onClick) {
+                    try {
+                        remixBtn[btnKey].onClick({ bubbles: true, cancelable: true });
+                        log("React onClick triggered on remix button.");
+                    } catch (e) {
+                        remixBtn.click();
+                        log("Used standard click() after React onClick error.");
+                    }
+                } else {
+                    remixBtn.click();
+                    log("Used standard click() - no React handler found.");
+                }
+
+                return true;
+            }
+
+            async function waitForRemixButton() {
+                return new Promise((resolve) => {
+                    let attempts = 0;
+                    const maxAttempts = 60; // 30 seconds with 500ms intervals
+                    
+                    const checkRemix = () => {
+                        attempts++;
+                        
+                        if (!isRunning) {
+                            log("Remix waiting cancelled: Not running.");
+                            resolve(false);
+                            return;
+                        }
+
+                        if (isRemixButtonAvailable()) {
+                            log(`Remix button became available after ${attempts * 0.5} seconds.`);
+                            resolve(true);
+                            return;
+                        }
+
+                        if (attempts >= maxAttempts) {
+                            log("ERROR: Remix button did not become available within 30 seconds.");
+                            resolve(false);
+                            return;
+                        }
+
+                        setTimeout(checkRemix, 500);
+                    };
+
+                    checkRemix();
+                });
+            }
+
+            async function submitRemixPrompt(promptText) {
+                if (!isRunning) {
+                    log("submitRemixPrompt cancelled: Not running.");
+                    return;
+                }
+
+                log(`=== REMIX PROMPT SUBMISSION (CLEAR-FIRST APPROACH) ===`);
+                log(`Target prompt text: "${promptText}"`);
+
+                // Find the remix textarea - be more specific for remix mode
+                log("Finding remix textarea (prioritizing document.activeElement)...");
+                let arosTextarea = null;
+
+                // Prioritize document.activeElement if it's a textarea, as clicking "Edit remix" should focus it.
+                if (document.activeElement && document.activeElement.tagName === 'TEXTAREA') {
+                    const el = document.activeElement;
+                    const rect = el.getBoundingClientRect();
+                    const isVisible = rect.width > 0 && rect.height > 0 &&
+                                   window.getComputedStyle(el).display !== 'none' &&
+                                   window.getComputedStyle(el).visibility !== 'hidden';
+                    if (isVisible) {
+                        // Check if it's within a dialog, which is common for remix modals
+                        if (el.closest('[role="dialog"]')) {
+                            log("Using document.activeElement as it's a visible TEXTAREA within a dialog.");
+                            arosTextarea = el;
+                        } else {
+                            log("document.activeElement is a visible TEXTAREA, but not in a dialog. Using it cautiously.");
+                            arosTextarea = el; // Still a strong candidate
+                        }
+                    } else {
+                        log("document.activeElement is a TEXTAREA but not visible. Will try fallback.");
+                    }
+                }
+
+                if (!arosTextarea) {
+                    log("document.activeElement was not a suitable TEXTAREA. Fallback: Searching for textarea in a dialog or visible one.");
+                    // Try to find a textarea within a dialog first
+                    const dialogTextareas = document.querySelectorAll('[role="dialog"] textarea');
+                    for (const ta of dialogTextareas) {
+                        const rect = ta.getBoundingClientRect();
+                        const isVisible = rect.width > 0 && rect.height > 0 &&
+                                       window.getComputedStyle(ta).display !== 'none' &&
+                                       window.getComputedStyle(ta).visibility !== 'hidden';
+                        if (isVisible) {
+                            arosTextarea = ta;
+                            log("Fallback: Found a visible textarea within a [role='dialog'].");
+                            break;
+                        }
+                    }
+
+                    // If still not found, try any visible textarea (last resort, less specific)
+                    // This targets textareas that might be part of the remix UI but not in a strict dialog
+                    if (!arosTextarea) {
+                        log("Fallback: No textarea in dialog found. Searching for any visible textarea likely for remix.");
+                        const allTextareas = document.querySelectorAll('textarea');
+                        for (const ta of allTextareas) {
+                            const rect = ta.getBoundingClientRect();
+                            const isVisible = rect.width > 0 && rect.height > 0 &&
+                                           window.getComputedStyle(ta).display !== 'none' &&
+                                           window.getComputedStyle(ta).visibility !== 'hidden';
+                            // Add heuristics: placeholder text or specific classes if known, or just being visible
+                            if (isVisible && (ta.placeholder.toLowerCase().includes('remix') || ta.placeholder.toLowerCase().includes('edit') || ta.classList.contains('flex') || ta.classList.contains('w-full'))) {
+                                arosTextarea = ta;
+                                log("Fallback: Found a generic visible textarea with remix-like properties (last resort).");
+                                break;
+                            }
+                        }
+                        // If still no specific one, take the first visible one if any
+                        if (!arosTextarea) {
+                             for (const ta of allTextareas) {
+                                const rect = ta.getBoundingClientRect();
+                                if (rect.width > 0 && rect.height > 0 && window.getComputedStyle(ta).display !== 'none' && window.getComputedStyle(ta).visibility !== 'hidden') {
+                                    arosTextarea = ta;
+                                    log("Fallback: Took the very first generic visible textarea (absolute last resort).");
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (!arosTextarea) {
+                    log("ERROR: Remix textarea could not be reliably identified. Stopping.");
+                    handleStop();
+                    return;
+                }
+
+                log(`Selected Remix Textarea - Class: ${arosTextarea.className}, ID: ${arosTextarea.id}, Placeholder: "${arosTextarea.placeholder}", Value: "${arosTextarea.value.substring(0,30)}..."`);
+
+
+                log(`Found textarea with initial content: "${arosTextarea.value?.substring(0, 50) || 'empty'}..."`);
+
+                // Focus the textarea
+                arosTextarea.focus();
+                await new Promise(resolve => setTimeout(resolve, 300));
+
+                // STEP 1: AGGRESSIVE TEXT CLEARING using multiple methods
+                log("STEP 1: Clearing existing text with multiple approaches...");
+                
+                // Method A: Select all and delete with keyboard simulation
+                log("Clearing Method A: Select All + Delete key simulation...");
+                try {
+                    // Select all text
+                    arosTextarea.select();
+                    arosTextarea.value = '';
+                    
+                    // Simulate Delete key
+                    const deleteEvent = new KeyboardEvent('keydown', {
+                        key: 'Delete',
+                        code: 'Delete',
+                        keyCode: 46,
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    arosTextarea.dispatchEvent(deleteEvent);
+                    
+                    // Also try Backspace
+                    const backspaceEvent = new KeyboardEvent('keydown', {
+                        key: 'Backspace',
+                        code: 'Backspace',
+                        keyCode: 8,
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    arosTextarea.dispatchEvent(backspaceEvent);
+                    
+                    // Clear the value directly
+                    arosTextarea.value = '';
+                    arosTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+                    
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                    log(`After Method A: "${arosTextarea.value}"`);
+                } catch (e) {
+                    log(`Method A failed: ${e.message}`);
+                }
+
+                // Method B: execCommand deleteWordBackward/deleteWordForward
+                log("Clearing Method B: execCommand delete operations...");
+                try {
+                    arosTextarea.focus();
+                    arosTextarea.select();
+                    
+                    // Try different delete commands
+                    document.execCommand('selectAll');
+                    document.execCommand('delete');
+                    document.execCommand('removeFormat');
+                    
+                    // Ensure it's empty
+                    arosTextarea.value = '';
+                    arosTextarea.textContent = '';
+                    
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                    log(`After Method B: "${arosTextarea.value}"`);
+                } catch (e) {
+                    log(`Method B failed: ${e.message}`);
+                }
+
+                // Method C: Character-by-character deletion
+                log("Clearing Method C: Character-by-character deletion...");
+                try {
+                    const currentLength = arosTextarea.value.length;
+                    if (currentLength > 0) {
+                        // Position cursor at end
+                        arosTextarea.setSelectionRange(currentLength, currentLength);
+                        
+                        // Delete each character with backspace simulation
+                        for (let i = 0; i < currentLength; i++) {
+                            // Simulate backspace key
+                            const backspaceEvent = new KeyboardEvent('keydown', {
+                                key: 'Backspace',
+                                code: 'Backspace',
+                                keyCode: 8,
+                                bubbles: true,
+                                cancelable: true
+                            });
+                            arosTextarea.dispatchEvent(backspaceEvent);
+                            
+                            // Remove character from value
+                            arosTextarea.value = arosTextarea.value.slice(0, -1);
+                            arosTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+                            
+                            // Small delay every 10 characters
+                            if (i % 10 === 0) {
+                                await new Promise(resolve => setTimeout(resolve, 10));
+                            }
+                        }
+                    }
+                    
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                    log(`After Method C: "${arosTextarea.value}"`);
+                } catch (e) {
+                    log(`Method C failed: ${e.message}`);
+                }
+
+                // Method D: React-specific clearing
+                log("Clearing Method D: React-specific clearing...");
+                try {
+                    // Find React props and trigger onChange with empty value
+                    const reactKeyClear = Object.keys(arosTextarea).find(k => k.startsWith("__reactProps$")); // Renamed to avoid conflict
+                    if (reactKeyClear && arosTextarea[reactKeyClear]?.onChange) {
+                        // Create a fake event with empty value
+                        const fakeEvent = {
+                            target: { ...arosTextarea, value: '' }, // Ensure value is part of the event target
+                            currentTarget: arosTextarea
+                        };
+                        arosTextarea[reactKeyClear].onChange(fakeEvent);
+                    }
+                    
+                    // Also clear the actual DOM value
+                    arosTextarea.value = '';
+                    arosTextarea.textContent = '';
+                    
+                    // Dispatch all relevant events
+                    arosTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+                    arosTextarea.dispatchEvent(new Event('change', { bubbles: true }));
+                    
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                    log(`After Method D: "${arosTextarea.value}"`);
+                } catch (e) {
+                    log(`Method D failed: ${e.message}`);
+                }
+
+                // Final verification that textarea is empty
+                const afterClearValue = arosTextarea.value || arosTextarea.textContent || '';
+                log(`After all clearing methods: "${afterClearValue}"`);
+                
+                if (afterClearValue.length > 0) {
+                    log(`WARNING: Textarea still contains text after clearing: "${afterClearValue}"`);
+                    // Force clear one more time
+                    arosTextarea.value = '';
+                    arosTextarea.textContent = '';
+                    arosTextarea.innerHTML = '';
+                }
+
+                // STEP 2: SET NEW TEXT (now that it should be empty)
+                log("STEP 2: Setting new text in cleared textarea...");
+                
+                // Wait longer after clearing to let React settle
+                await new Promise(resolve => setTimeout(resolve, 800));
+                
+                // Ensure textarea is still focused
+                arosTextarea.focus();
+                await new Promise(resolve => setTimeout(resolve, 200));
+                
+                // Method 1: Direct value setting with React events
+                log("Setting text Method 1: Direct value assignment with React events...");
+                arosTextarea.value = promptText;
+                
+                // Dispatch input event immediately
+                arosTextarea.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+                
+                // Trigger React onChange if available
+                const reactKeyTextSet = Object.keys(arosTextarea).find(k => k.startsWith("__reactProps$")); // Renamed for clarity
+                if (reactKeyTextSet && arosTextarea[reactKeyTextSet]?.onChange) {
+                    try {
+                        log("Triggering React onChange for new text with {target: arosTextarea} which has .value set...");
+                        arosTextarea[reactKeyTextSet].onChange({ target: arosTextarea }); // Pass the textarea itself, its .value is already updated
+                    } catch (e) {
+                        log(`React onChange (for new text) failed: ${e.message}`);
+                    }
+                }
+                
+                // Dispatch change event
+                arosTextarea.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+                
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Verify the new text was set
+                let afterSetValue = arosTextarea.value || arosTextarea.textContent || '';
+                log(`After Method 1: "${afterSetValue}"`);
+                
+                // Method 2: execCommand insertText (if Method 1 didn't work)
+                if (!afterSetValue.includes(promptText.substring(0, 10))) {
+                    log("Setting text Method 2: execCommand insertText...");
+                    arosTextarea.focus();
+                    arosTextarea.setSelectionRange(0, 0); // Position at start
+                    
+                    const execSuccess = document.execCommand('insertText', false, promptText);
+                    log(`execCommand insertText result: ${execSuccess}`);
+                    
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    afterSetValue = arosTextarea.value || arosTextarea.textContent || '';
+                    log(`After Method 2: "${afterSetValue}"`);
+                }
+                
+                // Method 3: Character-by-character typing (if Methods 1 & 2 didn't work)
+                if (!afterSetValue.includes(promptText.substring(0, 10))) {
+                    log("Setting text Method 3: Character-by-character typing...");
+                    arosTextarea.focus();
+                    arosTextarea.setSelectionRange(0, 0);
+                    
+                    // Type each character with events
+                    for (let i = 0; i < promptText.length; i++) {
+                        const char = promptText.charAt(i);
+                        
+                        // Add character to value
+                        arosTextarea.value += char;
+                        
+                        // Dispatch input event for each character
+                        arosTextarea.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+                        
+                        // Small delay every 20 characters to not overwhelm
+                        if (i % 20 === 0) {
+                            await new Promise(resolve => setTimeout(resolve, 50));
+                        }
+                    }
+                    
+                    // Final change event
+                    arosTextarea.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+                    
+                    // Try React onChange again
+                    if (reactKeyTextSet && arosTextarea[reactKeyTextSet]?.onChange) {
+                        try {
+                            arosTextarea[reactKeyTextSet].onChange({ target: arosTextarea });
+                        } catch (e) {
+                            log(`React onChange failed on typing: ${e.message}`);
+                        }
+                    }
+                    
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    afterSetValue = arosTextarea.value || arosTextarea.textContent || '';
+                    log(`After Method 3: "${afterSetValue}"`);
+                }
+                
+                // Method 4: Force React state update (if all else fails)
+                if (!afterSetValue.includes(promptText.substring(0, 10))) {
+                    log("Setting text Method 4: Force React state update...");
+
+                    // Try using React's internal value setter
+                    const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+                    if (valueSetter) {
+                        valueSetter.call(arosTextarea, promptText);
+                        log("Used HTMLTextAreaElement value setter");
+                    }
+
+                    // Create a more complete React event
+                    const reactKeyForce = Object.keys(arosTextarea).find(k => k.startsWith("__reactProps$")); // Renamed
+                    const syntheticEvent = {
+                        target: arosTextarea, // arosTextarea's value should be promptText here
+                        currentTarget: arosTextarea,
+                        type: 'change',
+                        bubbles: true,
+                        cancelable: true,
+                        nativeEvent: new Event('change') // ensure nativeEvent exists
+                    };
+
+                    if (reactKeyForce && arosTextarea[reactKeyForce]?.onChange) {
+                        try {
+                            // Crucially, ensure arosTextarea.value IS promptText before this call
+                            // The valueSetter above should have handled this.
+                            arosTextarea[reactKeyForce].onChange(syntheticEvent);
+                            log("Triggered React onChange with synthetic event");
+                        } catch (e) {
+                            log(`Synthetic React onChange failed: ${e.message}`);
+                        }
+                    }
+                    
+                    // Dispatch all events again
+                    arosTextarea.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+                    arosTextarea.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+                    
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    afterSetValue = arosTextarea.value || arosTextarea.textContent || '';
+                    log(`After Method 4: "${afterSetValue}"`);
+                }
+
+                // Final verification
+                const finalValue = arosTextarea.value || arosTextarea.textContent || '';
+                log(`FINAL RESULT: "${finalValue}"`);
+                log(`Expected text found: ${finalValue.includes(promptText.substring(0, 10))}`);
+                
+                if (!finalValue.includes(promptText.substring(0, 10))) {
+                    log(`❌ WARNING: New text was not successfully set! Final value: "${finalValue}"`);
+                    log(`❌ Expected to find: "${promptText.substring(0, 10)}"`);
+                } else {
+                    log(`✅ SUCCESS: New text was successfully set!`);
+                }
+                
+                log(`=== END REMIX PROMPT SUBMISSION ===`);
+
+                // Continue with submit button logic
+                log("Waiting for remix submit button to enable...");
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                if (!isRunning) {
+                    log("Remix submit cancelled: Not running.");
+                    return;
+                }
+
+                // Find and click the remix submit button
+                const submitBtn = findRemixSubmitButton();
+                if (submitBtn) {
+                    log("Remix submit button found and enabled.");
+
+                    // Set generation flags for auto mode
+                    const isAuto = document.getElementById('sora-auto-submit-checkbox')?.checked ?? false;
+                    if (isAuto) {
+                        log("Auto Mode: Setting flags for remix submission...");
+                        isGenerating = true;
+                        _generationIndicatorRemoved = false;
+                        _newImagesAppeared = false;
+
+                        const gridContainer = document.querySelector('div[class*="max-w-"][class*="flex-col"]') ?? document.body;
+                        if (completionObserver) {
+                            try {
+                                completionObserver.observe(gridContainer, { childList: true, subtree: true });
+                            } catch (e) {
+                                log(`ERROR starting completion observer for remix: ${e.message}`);
+                            }
+                        }
+
+                        if (generationTimeoutId) {
+                            clearTimeout(generationTimeoutId);
+                        }
+
+                        generationTimeoutId = setTimeout(() => {
+                            if (!isRunning || !isGenerating) return;
+                            log(`ERROR: Remix generation TIMEOUT reached.`);
+                            isGenerating = false;
+                            completionObserver?.disconnect();
+                            _generationIndicatorRemoved = false;
+                            _newImagesAppeared = false;
+                            generationTimeoutId = null;
+                            updateProgress();
+
+                            if (promptQueue.length > 0 || (isLooping && originalPromptList.length > 0)) {
+                                processNextRemixPrompt();
+                            } else {
+                                handleStop();
+                            }
+                        }, GENERATION_TIMEOUT_MS);
+                    }
+
+                    // Click the remix submit button
+                    const btnKey = Object.keys(submitBtn).find(k => k.startsWith("__reactProps$"));
+                    if (btnKey && submitBtn[btnKey]?.onClick) {
+                        try {
+                            submitBtn[btnKey].onClick({ bubbles: true, cancelable: true });
+                            log("React onClick triggered on remix submit button.");
+                        } catch (e) {
+                            submitBtn.click();
+                            log("Used standard click() after React onClick error on remix submit.");
+                        }
+                    } else {
+                        submitBtn.click();
+                        log("Used standard click() on remix submit - no React handler found.");
+                    }
+                } else {
+                    log("ERROR: Remix submit button not found. Stopping.");
+                    handleStop();
+                }
+            }
+
+            async function processNextRemixPrompt() {
+                if (!isRunning) { 
+                    log("processNextRemixPrompt: Aborted, not running."); 
+                    updateProgress(); 
+                    return; 
+                }
+
+                // Check loop state for remix mode
+                if (promptQueue.length === 0) {
+                    if (isLooping && originalPromptList.length > 0) {
+                        log("Remix Loop: Prompt queue empty. Resetting from original list.");
+                        promptQueue = [...originalPromptList];
+                        totalPromptCount = originalPromptList.length;
+                    } else {
+                        log("processNextRemixPrompt: Queue is empty and not looping. Finishing run.");
+                        isRunning = false;
+                        updateProgress();
+                        return;
+                    }
+                }
+
+                if (autoSubmitTimeoutId) { 
+                    clearTimeout(autoSubmitTimeoutId); 
+                    autoSubmitTimeoutId = null; 
+                    log("Cleared autoSubmitTimeoutId in processNextRemixPrompt."); 
+                }
+                if (generationTimeoutId) { 
+                    clearTimeout(generationTimeoutId); 
+                    generationTimeoutId = null; 
+                    log("Cleared generationTimeoutId in processNextRemixPrompt."); 
+                }
+
+                totalPromptsSentLoop++;
+                const nextPrompt = promptQueue.shift();
+                updateProgress();
+
+                // Wait for remix button to become available
+                log("Waiting for remix button to become available...");
+                const remixAvailable = await waitForRemixButton();
+                
+                if (!remixAvailable || !isRunning) {
+                    log("Remix button not available or process stopped. Stopping.");
+                    handleStop();
+                    return;
+                }
+
+                // Click the remix button
+                const remixClicked = await clickRemixButton();
+                if (!remixClicked || !isRunning) {
+                    log("Failed to click remix button or process stopped. Stopping.");
+                    handleStop();
+                    return;
+                }
+
+                // Wait a moment for the remix interface to load
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                if (!isRunning) {
+                    log("Process stopped while waiting for remix interface.");
+                    return;
+                }
+
+                // Submit the remix prompt
+                await submitRemixPrompt(nextPrompt);
+            }
+
+            function startRemixLoop() {
+                if (!isRunning || (promptQueue.length === 0 && !isLooping)) {
+                    log("startRemixLoop: Condition not met (not running or empty queue and not looping).");
+                    isRunning = false;
+                    updateProgress();
+                    return;
+                }
+                log(`Starting REMIX loop. Loop: ${isLooping}`);
+                processNextRemixPrompt();
+            }
+
+            // --- NEW: Keyboard Shortcuts Handler ---
+            function handleKeyboardShortcuts(event) {
+                // Only handle 'E' key for remix mode
+                if (event.key.toLowerCase() === 'e' && isRemixMode && !isRunning) {
+                    // Check if we're not typing in an input field
+                    const activeElement = document.activeElement;
+                    const isTyping = activeElement && (
+                        activeElement.tagName === 'INPUT' || 
+                        activeElement.tagName === 'TEXTAREA' || 
+                        activeElement.contentEditable === 'true'
+                    );
+                    
+                    if (!isTyping) {
+                        event.preventDefault();
+                        log("'E' key pressed - triggering manual remix.");
+                        handleManualRemix();
+                    }
+                }
+            }
+
+            // --- NEW: Manual Remix Handler ---
+            async function handleManualRemix() {
+                if (isRunning) {
+                    log("Manual remix cancelled: Process already running.");
+                    return;
+                }
+
+                log("Manual remix triggered via 'E' key.");
+                
+                // Check if remix button is available
+                if (!isRemixButtonAvailable()) {
+                    log("Manual remix: Remix button not available.");
+                    alert("Remix button is not available. Please wait for a generation to complete first.");
+                    return;
+                }
+
+                // Get the current prompt from the textarea
+                const input = document.getElementById('sora-input').value.trim();
+                if (!input) {
+                    log("Manual remix: No prompt entered.");
+                    alert("Please enter a prompt for remixing.");
+                    return;
+                }
+
+                // Use the first prompt if multiple are entered
+                const prompts = input.split(PROMPT_DELIMITER).map(x => x.trim()).filter(Boolean);
+                const promptToUse = prompts[0];
+
+                try {
+                    // Click the remix button
+                    const remixClicked = await clickRemixButton();
+                    if (!remixClicked) {
+                        log("Manual remix: Failed to click remix button.");
+                        alert("Failed to click remix button.");
+                        return;
+                    }
+
+                    // Wait for remix interface to load
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+
+                    // Submit the prompt
+                    await submitRemixPrompt(promptToUse);
+                    log("Manual remix completed successfully.");
+                } catch (error) {
+                    log(`Manual remix error: ${error.message}`);
+                    alert(`Manual remix failed: ${error.message}`);
+                }
+            }
+
+            // --- NEW: Manual Remix Loop Function ---
+            function startManualRemixLoop(intervalSeconds) {
+                log(`Starting MANUAL Remix Loop with ${intervalSeconds}s interval. Loop: ${isLooping}`);
+                const intervalMs = intervalSeconds * 1000;
+                const cooldownBtn = document.getElementById('sora-cooldown');
+
+                const stopManualTimer = () => {
+                    if (manualTimerTimeoutId) {
+                        clearTimeout(manualTimerTimeoutId);
+                        manualTimerTimeoutId = null;
+                        log("Manual remix timer cleared.");
+                    }
+                    if (visualCountdownInterval) {
+                        clearInterval(visualCountdownInterval);
+                        visualCountdownInterval = null;
+                        if (cooldownBtn && !isRunning) cooldownBtn.textContent = `Cooldown: --s`;
+                        log("Manual remix visual countdown timer cleared.");
+                    }
+                };
+
+                const startVisualCountdown = (totalSeconds) => {
+                    if (visualCountdownInterval) clearInterval(visualCountdownInterval);
+
+                    let timeRemaining = totalSeconds;
+                    if (cooldownBtn && cooldownBtn.style.display !== 'none') {
+                        cooldownBtn.textContent = `Cooldown: ${timeRemaining}s`;
+                    }
+
+                    visualCountdownInterval = setInterval(() => {
+                        timeRemaining--;
+                        if (cooldownBtn && cooldownBtn.style.display !== 'none') {
+                            if(isRunning) {
+                                cooldownBtn.textContent = `Cooldown: ${Math.max(0, timeRemaining)}s`;
+                            } else {
+                                clearInterval(visualCountdownInterval);
+                                visualCountdownInterval = null;
+                            }
+                        } else if (!isRunning){
+                            clearInterval(visualCountdownInterval);
+                            visualCountdownInterval = null;
+                        }
+                        if (timeRemaining <= 0) {
+                            clearInterval(visualCountdownInterval);
+                            visualCountdownInterval = null;
+                        }
+                    }, 1000);
+                    log(`Manual remix visual countdown started (${totalSeconds}s).`);
+                };
+
+                const manualRemixTick = async () => {
+                    if (!isRunning) {
+                        log("Manual Remix Timer Tick: Stopping - Not running.");
+                        stopManualTimer();
+                        updateProgress();
+                        return;
+                    }
+
+                    if (promptQueue.length === 0) {
+                        if (isLooping && originalPromptList.length > 0) {
+                            log("Manual Remix Timer Loop: Prompt queue empty. Resetting from original list.");
+                            promptQueue = [...originalPromptList];
+                            totalPromptCount = originalPromptList.length;
+                        } else {
+                            log("Manual Remix Timer Tick: Stopping - Queue empty and not looping.");
+                            stopManualTimer();
+                            isRunning = false;
+                            updateProgress();
+                            return;
+                        }
+                    }
+
+                    totalPromptsSentLoop++;
+                    const nextPrompt = promptQueue.shift();
+                    updateProgress();
+                    startVisualCountdown(intervalSeconds);
+
+                    // Wait for remix button and process the prompt
+                    const remixAvailable = await waitForRemixButton();
+                    if (!remixAvailable || !isRunning) {
+                        log("Remix button not available or process stopped during manual mode.");
+                        stopManualTimer();
+                        handleStop();
+                        return;
+                    }
+
+                    const remixClicked = await clickRemixButton();
+                    if (!remixClicked || !isRunning) {
+                        log("Failed to click remix button during manual mode.");
+                        stopManualTimer();
+                        handleStop();
+                        return;
+                    }
+
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    if (!isRunning) {
+                        stopManualTimer();
+                        return;
+                    }
+
+                    await submitRemixPrompt(nextPrompt);
+
+                    if (isRunning) {
+                        if (promptQueue.length > 0 || (isLooping && originalPromptList.length > 0)) {
+                            log("Manual Remix Timer: Prompt submitted. Scheduling next tick after cooldown.");
+                            manualTimerTimeoutId = setTimeout(async () => {
+                                await manualRemixTick();
+                            }, intervalMs);
+                            log(`Scheduled next manual remix tick in ${intervalMs}ms.`);
+                        } else {
+                            log("Manual Remix Timer: All prompts processed. Finishing run after cooldown.");
+                            stopManualTimer();
+                            isRunning = false;
+                            updateProgress();
+                        }
+                    } else {
+                        log("Manual Remix Timer Tick: Detected isRunning=false after prompt submission. Stopping timers.");
+                        stopManualTimer();
+                        updateProgress();
+                    }
+                };
+
+                // Initial prompt submission for manual remix mode
+                if (isRunning && promptQueue.length > 0) {
+                    log("Manual Remix Timer: Preparing to send initial prompt.");
+                    (async () => {
+                        totalPromptsSentLoop++;
+                        const firstPrompt = promptQueue.shift();
+                        updateProgress();
+                        startVisualCountdown(intervalSeconds);
+
+                        const remixAvailable = await waitForRemixButton();
+                        if (!remixAvailable || !isRunning) {
+                            log("Initial remix button not available or process stopped.");
+                            stopManualTimer();
+                            handleStop();
+                            return;
+                        }
+
+                        const remixClicked = await clickRemixButton();
+                        if (!remixClicked || !isRunning) {
+                            log("Failed to click initial remix button.");
+                            stopManualTimer();
+                            handleStop();
+                            return;
+                        }
+
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        if (!isRunning) {
+                            stopManualTimer();
+                            return;
+                        }
+
+                        await submitRemixPrompt(firstPrompt);
+
+                        if (isRunning) {
+                            if (promptQueue.length > 0 || (isLooping && originalPromptList.length > 0)) {
+                                log("Manual Remix Timer: Initial prompt submitted. Scheduling next tick.");
+                                manualTimerTimeoutId = setTimeout(async () => {
+                                    await manualRemixTick();
+                                }, intervalMs);
+                                log(`Scheduled next manual remix tick in ${intervalMs}ms.`);
+                            } else {
+                                log("Manual Remix Timer: Only one prompt was in the queue and not looping. Finishing run after cooldown.");
+                                stopManualTimer();
+                                isRunning = false;
+                                updateProgress();
+                            }
+                        } else {
+                            log("Manual Remix Timer: Process was stopped during initial prompt submission.");
+                            stopManualTimer();
+                            updateProgress();
+                        }
+                    })();
+                } else if (isRunning && promptQueue.length === 0 && isLooping && originalPromptList.length > 0) {
+                    log("Manual Remix Timer: Started with empty queue but looping. Resetting queue and starting tick.");
+                    promptQueue = [...originalPromptList];
+                    totalPromptCount = originalPromptList.length;
+                    manualTimerTimeoutId = setTimeout(async () => {
+                        await manualRemixTick();
+                    }, 0);
+                } else if (isRunning) {
+                    log("Manual Remix Timer: Started with an empty queue and no way to loop. Stopping.");
+                    isRunning = false;
+                    stopManualTimer();
+                    updateProgress();
+                } else {
+                    log("Manual Remix Timer: Initial state not suitable for starting timer (isRunning is false).");
+                    updateProgress();
                 }
             }
 

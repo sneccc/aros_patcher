@@ -1,13 +1,13 @@
 const wildcardUtils = {
     categories: {
         color: ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'black', 'white', 'pink', 'brown', 'gray', 'gold', 'silver', 'rainbow'],
-        animal: ['dog', 'cat', 'bird', 'fish', 'lion', 'tiger', 'bear', 'elephant', 'monkey', 'gorilla', 'zebra', 'giraffe', 'wolf', 'fox', 'deer', 'rabbit', 'squirrel', 'dragon', 'unicorn', 'phoenix'],
-        object: ['ball', 'cube', 'sphere', 'pyramid', 'car', 'house', 'tree', 'flower', 'book', 'computer', 'phone', 'chair', 'table', 'lamp', 'sword', 'shield', 'rocket', 'planet'],
+        animal: ['dog', 'cat', 'bird', 'fish', 'lion', 'tiger', 'bear', 'elephant', 'monkey', 'gorilla', 'zebra', 'giraffe', 'wolf', 'fox', 'deer', 'rabbit', 'squirrel', 'dragon', 'unicorn', 'phoenix', 'panda', 'koala', 'kangaroo', 'penguin', 'owl', 'eagle', 'shark', 'dolphin', 'whale', 'octopus', 'crab', 'butterfly', 'scorpion', 'snake', 'lizard', 'frog', 'crocodile', 'hippopotamus', 'rhinoceros', 'bat'],
+        object: ['ball', 'cube', 'sphere', 'pyramid', 'car', 'house', 'tree', 'flower', 'book', 'computer', 'phone', 'chair', 'table', 'lamp', 'sword', 'shield', 'rocket', 'planet', 'orb', 'ring', 'amulet', 'staff', 'wand', 'potion', 'scroll', 'crystal ball', 'telescope', 'microscope', 'robot', 'drone', 'spaceship', 'portal', 'key', 'chest', 'crown', 'throne', 'artifact', 'relic'],
         material: ['wooden', 'metallic', 'glass', 'fabric', 'stone', 'plastic', 'glowing', 'crystal', 'velvet', 'silk', 'rusty', 'polished', 'matte', 'transparent', 'liquid'],
         emotion: ['happy', 'sad', 'angry', 'surprised', 'joyful', 'melancholic', 'fierce', 'calm', 'serene', 'anxious', 'excited', 'dreamy', 'nostalgic'],
         weather: ['sunny', 'rainy', 'cloudy', 'stormy', 'snowy', 'foggy', 'windy', 'twilight', 'dawn', 'dusk', 'starry night', 'aurora borealis'],
         time: ['ancient', 'futuristic', 'medieval', 'victorian era', 'stone age', 'digital age', 'morning', 'afternoon', 'evening', 'midnight', 'spring', 'summer', 'autumn', 'winter'],
-        location: ['forest', 'mountain', 'beach', 'city', 'desert', 'space', 'underwater', 'castle', 'village', 'cyberpunk city', 'fantasy kingdom', 'haunted house', 'secret garden', 'volcano', 'arctic tundra'],
+        location: ['forest', 'mountain', 'beach', 'city', 'desert', 'space', 'underwater', 'castle', 'village', 'cyberpunk city', 'fantasy kingdom', 'haunted house', 'secret garden', 'volcano', 'arctic tundra', 'jungle', 'swamp', 'cave', 'canyon', 'valley', 'island', 'ruins', 'library', 'laboratory', 'observatory', 'spaceship', 'alien planet', 'waterfall', 'meadow', 'glacier', 'underground city', 'floating island', 'crystal cave', 'ancient temple'],
         style: ['photorealistic', 'impressionistic', 'surreal', 'abstract', 'minimalist', 'cartoonish', 'van gogh style', 'cubist', 'steampunk', 'gothic', 'art deco', 'pixel art', 'anime style', 'comic book style', 'watercolor'],
         lighting: ['dramatic lighting', 'soft lighting', 'backlighting', 'rim lighting', 'volumetric lighting', 'studio lighting', 'cinematic lighting', 'natural lighting', 'neon lighting', 'candlelight', 'moonlight', 'golden hour'],
         camera: ['close-up shot', 'wide shot', 'aerial view', 'fisheye lens', 'macro shot', 'long shot', 'Dutch angle', 'bokeh', 'time-lapse', 'slow motion', 'found footage style', 'drone shot']
