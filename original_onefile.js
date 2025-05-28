@@ -190,6 +190,38 @@ workerLog("Worker script loaded and ready.");
             // Add a state variable to track which image we're currently using
             let currentPersistentImageIndex = 0;
 
+            // --- NEW: Function for Visual Countdown (Moved to higher scope) ---
+            function startVisualCountdown(totalSeconds) {
+                const cooldownBtn = document.getElementById('sora-cooldown'); // Ensure cooldownBtn is fetched here or passed
+                if (visualCountdownInterval) clearInterval(visualCountdownInterval);
+
+                let timeRemaining = totalSeconds;
+                if (cooldownBtn && cooldownBtn.style.display !== 'none') {
+                    cooldownBtn.textContent = `Cooldown: ${timeRemaining}s`;
+                }
+
+                visualCountdownInterval = setInterval(() => {
+                    timeRemaining--;
+                    if (cooldownBtn && cooldownBtn.style.display !== 'none') {
+                        if(isRunning) { // Only update if still running
+                            cooldownBtn.textContent = `Cooldown: ${Math.max(0, timeRemaining)}s`;
+                        } else { // Stop countdown if main process stopped
+                            clearInterval(visualCountdownInterval);
+                            visualCountdownInterval = null;
+                        }
+                    } else if (!isRunning){ // Also stop if button is hidden and not running
+                        clearInterval(visualCountdownInterval);
+                        visualCountdownInterval = null;
+                    }
+                    if (timeRemaining <= 0) { // Stop when time reaches 0
+                        clearInterval(visualCountdownInterval);
+                        visualCountdownInterval = null;
+                    }
+                }, 1000);
+                log(`Visual countdown started (${totalSeconds}s). ID: ${visualCountdownInterval}`);
+            }
+            // --- End Visual Countdown Function ---
+
             // --- Logging Function ---
             function log(msg) {
                 const now = new Date();
@@ -1707,34 +1739,7 @@ workerLog("Worker script loaded and ready.");
                     }
                 };
 
-                const startVisualCountdown = (totalSeconds) => {
-                    if (visualCountdownInterval) clearInterval(visualCountdownInterval);
-
-                    let timeRemaining = totalSeconds;
-                    if (cooldownBtn && cooldownBtn.style.display !== 'none') {
-                        cooldownBtn.textContent = `Cooldown: ${timeRemaining}s`;
-                    }
-
-                    visualCountdownInterval = setInterval(() => {
-                        timeRemaining--;
-                        if (cooldownBtn && cooldownBtn.style.display !== 'none') {
-                            if(isRunning) { // Only update if still running
-                                cooldownBtn.textContent = `Cooldown: ${Math.max(0, timeRemaining)}s`;
-                            } else { // Stop countdown if main process stopped
-                                clearInterval(visualCountdownInterval);
-                                visualCountdownInterval = null;
-                            }
-                        } else if (!isRunning){ // Also stop if button is hidden and not running
-                            clearInterval(visualCountdownInterval);
-                            visualCountdownInterval = null;
-                        }
-                        if (timeRemaining <= 0) { // Stop when time reaches 0
-                            clearInterval(visualCountdownInterval);
-                            visualCountdownInterval = null;
-                        }
-                    }, 1000);
-                    log(`Manual visual countdown started (${totalSeconds}s). ID: ${visualCountdownInterval}`); // Corrected log placement
-                };
+                // startVisualCountdown is now defined globally
 
                 // manualTick must be defined before scheduleNextManualTick if scheduleNextManualTick calls it directly.
                 // However, scheduleNextManualTick uses setTimeout, so manualTick can be defined later in scope.
