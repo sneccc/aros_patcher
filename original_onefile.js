@@ -59,6 +59,127 @@
             let remixObserver = null;       // Observer to watch for remix button availability
             let remixTimeoutId = null;      // Timeout for remix button waiting
 
+            // --- NEW: Remix Mode Worker ---
+            let remixModeWorker = null;
+            const remixWorkerCode = `
+// --- Web Worker for Aros Patcher Remix Mode ---
+function workerLog(message) {
+    self.postMessage({ type: 'log', message: 'Worker: ' + message });
+}
+
+let promptQueue_w = [];
+let originalPromptList_w = [];
+let isRunning_w = false;
+let isLooping_w = false;
+let currentInterval_w = 5000;
+let currentTimeoutId = null;
+
+function processNextInWorker() {
+    if (!isRunning_w) {
+        workerLog("Not running, stopping periodic execution.");
+        if (currentTimeoutId) clearTimeout(currentTimeoutId);
+        currentTimeoutId = null;
+        return;
+    }
+
+    if (promptQueue_w.length === 0) {
+        if (isLooping_w && originalPromptList_w.length > 0) {
+            workerLog("Queue empty, looping. Resetting from original list.");
+            promptQueue_w = [...originalPromptList_w];
+            self.postMessage({
+                type: 'queue_refilled',
+                queueSize: promptQueue_w.length,
+                totalInLoop: originalPromptList_w.length
+            });
+        } else {
+            workerLog("Queue empty, not looping. Signaling finished.");
+            self.postMessage({ type: 'finished' });
+            isRunning_w = false;
+            if (currentTimeoutId) clearTimeout(currentTimeoutId);
+            currentTimeoutId = null;
+            return;
+        }
+    }
+
+    if (promptQueue_w.length === 0) { // Check again
+        workerLog("Queue still empty after loop check. Signaling finished.");
+        self.postMessage({ type: 'finished' });
+        isRunning_w = false;
+        if (currentTimeoutId) clearTimeout(currentTimeoutId);
+        currentTimeoutId = null;
+        return;
+    }
+
+    const nextPrompt = promptQueue_w.shift();
+    workerLog('Processing prompt: "' + nextPrompt + '"');
+    self.postMessage({
+        type: 'process_prompt_in_main',
+        prompt: nextPrompt,
+        remainingInQueue: promptQueue_w.length,
+        totalInOriginalList: originalPromptList_w.length
+    });
+}
+
+self.onmessage = function(e) {
+    const data = e.data;
+    workerLog('Received command: ' + data.command);
+
+    switch (data.command) {
+        case 'start':
+            promptQueue_w = [...(data.prompts || [])];
+            originalPromptList_w = [...(data.originalPrompts || data.prompts || [])];
+            isLooping_w = data.isLooping || false;
+            currentInterval_w = data.interval || 5000;
+            isRunning_w = true;
+
+            workerLog('Starting. Prompts: ' + promptQueue_w.length + ', Loop: ' + isLooping_w + ', Interval: ' + currentInterval_w + 'ms');
+            self.postMessage({ type: 'started', initialQueueSize: promptQueue_w.length });
+            
+            if (currentTimeoutId) clearTimeout(currentTimeoutId);
+            processNextInWorker();
+            break;
+
+        case 'stop':
+            workerLog("Stopping.");
+            isRunning_w = false;
+            if (currentTimeoutId) clearTimeout(currentTimeoutId);
+            currentTimeoutId = null;
+            promptQueue_w = [];
+            originalPromptList_w = [];
+            self.postMessage({ type: 'stopped' });
+            break;
+
+        case 'schedule_next_tick_ack':
+            workerLog("Main thread acknowledged prompt processing. Scheduling next tick.");
+            if (isRunning_w) {
+                if (currentTimeoutId) clearTimeout(currentTimeoutId);
+                currentTimeoutId = setTimeout(processNextInWorker, currentInterval_w);
+                workerLog('Next tick scheduled in ' + currentInterval_w + 'ms.');
+            } else {
+                workerLog("Was asked to schedule next tick, but not running. Won't schedule.");
+            }
+            break;
+        
+        case 'update_settings':
+            workerLog("Updating settings.");
+            if (data.hasOwnProperty('isLooping')) {
+                isLooping_w = data.isLooping;
+                workerLog('Looping set to: ' + isLooping_w);
+            }
+            if (data.hasOwnProperty('interval')) {
+                currentInterval_w = data.interval;
+                workerLog('Interval set to: ' + currentInterval_w + 'ms');
+            }
+            break;
+
+        default:
+            workerLog('Unknown command received: ' + data.command);
+            break;
+    }
+};
+workerLog("Worker script loaded and ready.");
+`;
+
             // --- NEW: Image Persistence Globals ---
             let persistedImages = []; // Array to store File objects for persistent pasting
             let isImagePersistenceEnabled = false; // Controlled by a checkbox
@@ -989,11 +1110,24 @@
 
                 // Check if we're in remix mode and use appropriate start functions
                 if (isRemixMode) {
-                    log("Remix mode detected. Starting remix workflow.");
-                    if (isAuto) {
-                        startRemixLoop();
+                    log("Remix mode detected. Starting remix workflow via worker.");
+                    initializeRemixWorker(); // Ensure worker is ready
+                    if (!remixModeWorker) {
+                        alert("Failed to initialize remix worker. Remix mode cannot start.");
+                        log("ERROR: Remix worker not initialized in handleStart.");
+                        isRunning = false; // ensure we don't proceed
+                        updateProgress();
+                        return;
+                    }
+
+                    if (isAuto) { // isAuto is the sora-auto-submit-checkbox
+                        startRemixLoop(); // This is the new worker-based auto remix loop
                     } else {
-                        startManualRemixLoop(currentCooldown);
+                        // Manual Remix Mode
+                        const cooldownInput = document.getElementById('sora-cooldown-time');
+                        let currentCooldown = parseInt(cooldownInput?.value, 10) || 5; // Default 5s
+                        if (currentCooldown < 1) currentCooldown = 1; // Min 1s
+                         startManualRemixLoop(currentCooldown); // This is the new worker-based manual remix loop
                     }
                 } else {
                     // Normal or wildcard mode
@@ -1027,6 +1161,13 @@
                 refreshImagePreviewGallery(); // Refresh the gallery
                 updatePersistedImageCountUI();
                 log("Persisted images cleared.");
+
+                if (remixModeWorker && isRunning && isRemixMode) {
+                    log("Remix mode is running and clear was pressed. Stopping worker and clearing its queue state.");
+                    // Simplest is to stop. Worker will clear its internal queues on stop command.
+                    remixModeWorker.postMessage({ command: 'stop' });
+                    // UI will reflect this via isRunning becoming false after worker acks stop.
+                }
             }
 
             // Use 5.7 version - identical
@@ -1035,31 +1176,20 @@
             function handleMiniButtonClick() { log("Mini button clicked."); if (!isRunning) { const wrapper = document.getElementById('sora-auto-ui'); const miniBtn = document.getElementById('sora-minibtn'); if (wrapper) { wrapper.style.display = 'block'; void wrapper.offsetWidth; wrapper.style.opacity = '1'; wrapper.style.transform = 'scale(1)'; log("Main UI restored."); } if (miniBtn) miniBtn.style.display = 'none'; const auxContainer = document.getElementById('sora-aux-controls-container'); if (auxContainer) auxContainer.style.display = 'none'; hideOverlay(); /* Hide overlay & unlock scroll */ } else { log("Cannot open UI while process is running."); } }
 
             // Modify handleStop using 5.7 logic
-            function handleStop() {
-                log("Stop button clicked.");
-                // Reset the current persistent image index when stopping
-                currentPersistentImageIndex = 0;
-                log(`PERSISTENCE: Reset current image index to 0 on stop.`);
-
-                if (!isRunning) { log("Process is not running, stop ignored."); return; }
-
+            function handleStop(workerInitiatedStop = false) {
+                log(`Stop called. Worker-initiated: ${workerInitiatedStop}`);
                 isRunning = false;
                 isGenerating = false;
-                isLooping = false; // << Reset loop state (from 5.7)
-                _generationIndicatorRemoved = false;
-                _newImagesAppeared = false;
-                
-                // Stop any ongoing sequential paste process
-                if (sequentialPasteTimeoutId) {
-                    clearTimeout(sequentialPasteTimeoutId);
-                    sequentialPasteTimeoutId = null;
-                    isPastingSequence = false;
-                    log("Cleared sequential image paste timeout on stop.");
+                isWaitingForRemix = false;
+
+                if (remixModeWorker && !workerInitiatedStop) {
+                    log("Telling remix worker to stop.");
+                    remixModeWorker.postMessage({ command: 'stop' });
+                } else if (remixModeWorker && workerInitiatedStop){
+                    log("Worker initiated stop, main thread acknowledging. Not sending stop back to worker.");
                 }
 
-                completionObserver?.disconnect();
-                log("Completion observer disconnected on stop.");
-
+                // Clear all relevant timeouts and intervals
                 if (autoSubmitTimeoutId) { clearTimeout(autoSubmitTimeoutId); autoSubmitTimeoutId = null; log("Cleared pending auto-submit timeout on stop."); }
                 if (generationTimeoutId) { clearTimeout(generationTimeoutId); generationTimeoutId = null; log("Cleared pending generation timeout on stop."); }
                 if (manualTimerTimeoutId) { clearTimeout(manualTimerTimeoutId); manualTimerTimeoutId = null; log("Cleared manual execution timer on stop."); }
@@ -3366,4 +3496,427 @@
                 }
             }
 
+            // --- NEW: Remix Worker Message Handler ---
+            async function handleRemixWorkerMessage(e) {
+                const data = e.data;
+                log(`Main received from worker: ${JSON.stringify(data)}`);
+
+                switch (data.type) {
+                    case 'log':
+                        log(data.message); // Log messages from worker
+                        break;
+                    case 'started':
+                        log(`Remix worker reported started. Initial queue: ${data.initialQueueSize}`);
+                        // Update UI to reflect that the worker has started and potentially the queue size.
+                        // The promptQueue in main thread is the source for the worker's initial queue.
+                        // totalPromptCount = data.initialQueueSize; // Or based on main promptQueue.length before worker start
+                        updateProgress();
+                        break;
+                    case 'stopped':
+                    case 'finished':
+                        log(`Remix worker reported ${data.type}.`);
+                        if (data.type === 'finished' && isRunning) {
+                            log("Worker finished processing queue (e.g., empty and not looping).");
+                            handleStop(true); // Pass true to indicate worker initiated this, avoid double-stopping worker
+                        } else if (data.type === 'stopped' && isRunning) {
+                            // If worker confirmed stop due to main thread request, update UI.
+                            // isRunning should already be false if main thread called handleStop which then told worker.
+                            // This case is more for worker confirming its stopped state.
+                        }
+                        updateProgress();
+                        break;
+                    case 'queue_refilled':
+                        log(`Worker refilled queue. Main thread promptQueue may be stale. Worker size: ${data.queueSize}, Total in Loop: ${data.totalInLoop}`);
+                        // The main thread promptQueue is NOT directly modified here.
+                        // The worker manages its own queue. UI should reflect worker's state.
+                        // updateProgress() will use main thread's promptQueue, which might be misleading for count.
+                        // This needs to be reconciled if UI relies heavily on main thread promptQueue size during worker operation.
+                        // For now, log it. A more sophisticated updateProgress would take worker's counts.
+                        updateProgress(); // Call to update general UI elements like status.
+                        break;
+                    case 'process_prompt_in_main':
+                        log(`Main: Worker requests processing for prompt: "${data.prompt}"`);
+                        if (!isRunning || !isRemixMode) {
+                            log("Main: Worker requested prompt processing, but main state is not running/remix. Telling worker to stop.");
+                            if (remixModeWorker) remixModeWorker.postMessage({ command: 'stop' });
+                            return;
+                        }
+
+                        totalPromptsSentLoop++; // Increment when main starts processing a worker-initiated prompt.
+                        // updateProgress() will be called after submission.
+
+                        log("Main: Waiting for remix button (worker request)...");
+                        const remixAvailable = await waitForRemixButton();
+                        if (!remixAvailable || !isRunning) {
+                            log("Main: Remix button not available or stopped (worker request). Stopping.");
+                            handleStop();
+                            return;
+                        }
+
+                        const remixClicked = await clickRemixButton();
+                        if (!remixClicked || !isRunning) {
+                            log("Main: Failed to click remix button (worker request). Stopping.");
+                            handleStop();
+                            return;
+                        }
+
+                        await new Promise(resolve => setTimeout(resolve, 1000)); // UI load
+
+                        if (!isRunning) {
+                            log("Main: Stopped while waiting for remix UI (worker request).");
+                            handleStop();
+                            return;
+                        }
+
+                        if (generationTimeoutId) { clearTimeout(generationTimeoutId); generationTimeoutId = null;}
+                        if (autoSubmitTimeoutId) { clearTimeout(autoSubmitTimeoutId); autoSubmitTimeoutId = null; }
+
+                        await submitRemixPrompt(data.prompt);
+
+                        if (isRunning) {
+                            log("Main: Prompt submitted to DOM. Acknowledging worker.");
+                            if (remixModeWorker) remixModeWorker.postMessage({ command: 'schedule_next_tick_ack' });
+                            
+                            // If in manual remix mode, restart visual countdown after successful submission
+                            const autoCheckbox = document.getElementById('sora-auto-submit-checkbox');
+                            if (isRemixMode && (!autoCheckbox || !autoCheckbox.checked)) {
+                                const cooldownInput = document.getElementById('sora-cooldown-time');
+                                let currentCooldown = parseInt(cooldownInput?.value, 10) || 5;
+                                if (currentCooldown < 1) currentCooldown = 1;
+                                log(`Manual Remix (Worker): Restarting visual countdown for ${currentCooldown}s.`);
+                                startVisualCountdown(currentCooldown);
+                            }
+                        } else {
+                            log("Main: Not running after prompt submission. Telling worker to stop.");
+                            if (remixModeWorker) remixModeWorker.postMessage({ command: 'stop' });
+                        }
+                        updateProgress();
+                        break;
+                    default:
+                        log(`Main: Unknown message type from worker: ${data.type}`);
+                }
+            }
+
+            // --- NEW: Initialize Remix Worker ---
+            function initializeRemixWorker() {
+                if (remixModeWorker) {
+                    log("Remix worker already initialized.");
+                    return;
+                }
+                try {
+                    log("Initializing remix worker...");
+                    const blob = new Blob([remixWorkerCode], { type: 'application/javascript' });
+                    const workerUrl = URL.createObjectURL(blob);
+                    remixModeWorker = new Worker(workerUrl);
+                    URL.revokeObjectURL(workerUrl); // Revoke immediately as worker is created
+
+                    remixModeWorker.onmessage = handleRemixWorkerMessage;
+                    remixModeWorker.onerror = function(error) {
+                        log(`Remix Worker Error: ${error.message} at ${error.filename}:${error.lineno}`);
+                        console.error("Remix Worker Error:", error);
+                        // Consider stopping the process or alerting the user
+                        if (isRunning && isRemixMode) {
+                            handleStop();
+                            alert("A critical error occurred in the Remix background worker. Remix mode has been stopped. Please check the console (F12).");
+                        }
+                    };
+                    log("Remix worker instance created and listeners attached.");
+                } catch (e) {
+                    log(`FATAL: Could not initialize remix worker: ${e.message}`);
+                    console.error("Worker Init Failed:", e);
+                    remixModeWorker = null; // Ensure it's null on failure
+                    alert("Failed to initialize the Remix background worker. Remix mode may not work correctly in the background.");
+                }
+            }
+
+            // --- EXISTING Remix Functions to verify ---
+            // processNextRemixPrompt will be largely replaced by worker interaction,
+            // but its DOM manipulation parts will be called from handleRemixWorkerMessage.
+            // We need to ensure it doesn't have its own looping/setTimeout anymore.
+
+            async function processNextRemixPrompt() {
+                // THIS FUNCTION'S LOOPING LOGIC IS NOW HANDLED BY THE WORKER if active.
+                // It should primarily be a collection of DOM actions triggered by worker.
+                // If called directly (e.g. worker failed or not in remix worker mode), it can serve as a fallback for ONE prompt.
+                if (remixModeWorker && isRunning && isRemixMode && isWorkerRemixActive()) {
+                    log("WARNING: processNextRemixPrompt called directly while worker is active for remix. Worker should be driving. Ignoring direct call.");
+                    return;
+                }
+
+                log("processNextRemixPrompt (direct call or non-worker path)");
+
+                if (!isRunning) {
+                    log("processNextRemixPrompt: Aborted, not running.");
+                    updateProgress();
+                    return;
+                }
+
+                // Queue management for direct call (fallback)
+                if (promptQueue.length === 0) {
+                    if (isLooping && originalPromptList.length > 0) {
+                        log("Remix Loop (direct): Prompt queue empty. Resetting from original list.");
+                        promptQueue = [...originalPromptList];
+                        totalPromptCount = originalPromptList.length;
+                    } else {
+                        log("processNextRemixPrompt (direct): Queue empty and not looping. Finishing run.");
+                        handleStop(); // Stop normally
+                        return;
+                    }
+                }
+                if (promptQueue.length === 0) { // check again if only looping reset the queue
+                    log("processNextRemixPrompt (direct): Queue still empty after loop logic. Finishing run.");
+                    handleStop(); // Stop normally
+                    return;
+                }
+
+                // Clear old auto-mode timers if any were active (relevant for direct/fallback path)
+                if (autoSubmitTimeoutId) { clearTimeout(autoSubmitTimeoutId); autoSubmitTimeoutId = null; log("Cleared autoSubmitTimeoutId in processNextRemixPrompt (direct)."); }
+                if (generationTimeoutId) { clearTimeout(generationTimeoutId); generationTimeoutId = null; log("Cleared generationTimeoutId in processNextRemixPrompt (direct)."); }
+
+                totalPromptsSentLoop++; // Only increment if main thread is managing this specific call
+                const nextPrompt = promptQueue.shift();
+                updateProgress(); // Reflect shifted prompt
+
+                log("Waiting for remix button to become available (direct)...");
+                const remixAvailable = await waitForRemixButton();
+
+                if (!remixAvailable || !isRunning) {
+                    log("Remix button not available or process stopped (direct). Stopping.");
+                    handleStop();
+                    return;
+                }
+
+                const remixClicked = await clickRemixButton();
+                if (!remixClicked || !isRunning) {
+                    log("Failed to click remix button or process stopped (direct). Stopping.");
+                    handleStop();
+                    return;
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for UI
+
+                if (!isRunning) {
+                    log("Process stopped while waiting for remix interface (direct).");
+                    handleStop(); // Ensure full stop
+                    return;
+                }
+
+                await submitRemixPrompt(nextPrompt);
+                log("submitRemixPrompt (direct) finished.");
+
+                // CRITICAL: NO AUTOMATIC RESCHEDULING HERE FOR THE DIRECT PATH.
+                // If this was a direct call, it processes one prompt and stops.
+                // If looping is desired for direct calls (fallback mode), it must be handled by startRemixLoop/startManualRemixLoop's non-worker paths.
+                // For worker mode, worker handles rescheduling.
+
+                // If it was a single manual remix trigger, and not part of a loop:
+                if (!isLooping && promptQueue.length === 0 && !isWorkerRemixActive()) {
+                    log("processNextRemixPrompt (direct): Single prompt processed, queue empty, not looping. Stopping.");
+                    handleStop();
+                }
+            }
+
+            function isWorkerRemixActive() {
+                // Helper to check if the worker is supposed to be managing the remix loop
+                // This can be more sophisticated, e.g., by checking a specific state variable
+                // that is set when worker successfully starts for remix mode.
+                return remixModeWorker && isRunning && isRemixMode;
+            }
+
+            function startRemixLoop() { // Auto Remix Loop (uses worker)
+                if (!isRunning) {
+                    log("startRemixLoop: Aborted, isRunning is false.");
+                    return;
+                }
+                if (promptQueue.length === 0 && !isLooping) {
+                    log("startRemixLoop: Queue empty and not looping. Stopping.");
+                    handleStop(); // Full stop, will also tell worker if active
+                    return;
+                }
+
+                if (!remixModeWorker) {
+                    log("Attempting to initialize remix worker for Auto Remix loop...");
+                    initializeRemixWorker();
+                    if (!remixModeWorker) {
+                        log("ERROR: Remix worker initialization failed. Cannot start Auto Remix loop. UI alert shown by init func.");
+                        handleStop(); // Full stop
+                        return;
+                    }
+                }
+
+                const autoSubmitIntervalElement = document.getElementById('sora-auto-submit-interval');
+                let intervalMs = 60000; // Default to 60 seconds
+                if (autoSubmitIntervalElement) {
+                    const parsedInterval = parseInt(autoSubmitIntervalElement.value, 10);
+                    if (!isNaN(parsedInterval) && parsedInterval >= 1) {
+                        intervalMs = parsedInterval * 1000;
+                    } else {
+                        log(`Invalid auto-remix interval: ${autoSubmitIntervalElement.value}. Using default ${intervalMs / 1000}s.`);
+                    }
+                } else {
+                    log(`Auto-remix interval input not found. Using default ${intervalMs / 1000}s.`);
+                }
+
+                log(`Requesting AUTO REMIX start from WORKER. Loop: ${isLooping}, Interval: ${intervalMs}ms, Queue: ${promptQueue.length}`);
+                remixModeWorker.postMessage({
+                    command: 'start',
+                    prompts: [...promptQueue],
+                    originalPrompts: [...originalPromptList],
+                    isLooping: isLooping,
+                    interval: intervalMs
+                });
+                // Visual countdown and UI updates are now primarily driven by messages from the worker
+                // via handleRemixWorkerMessage and updateProgress calls within it.
+            }
+
+            function startManualRemixLoop(intervalSeconds) { // Manual Remix Loop (uses worker)
+                if (!isRunning) {
+                    log("startManualRemixLoop: Aborted, isRunning is false.");
+                    return;
+                }
+                if (promptQueue.length === 0 && !isLooping) {
+                    log("startManualRemixLoop: Queue empty and not looping. Stopping.");
+                    handleStop();
+                    return;
+                }
+
+                if (!remixModeWorker) {
+                    log("Attempting to initialize remix worker for Manual Remix loop...");
+                    initializeRemixWorker();
+                    if (!remixModeWorker) {
+                        log("ERROR: Remix worker initialization failed. Cannot start Manual Remix loop. UI alert shown by init func.");
+                        handleStop();
+                        return;
+                    }
+                }
+
+                const intervalMs = intervalSeconds * 1000;
+                log(`Requesting MANUAL REMIX start from WORKER. Interval: ${intervalSeconds}s, Loop: ${isLooping}, Queue: ${promptQueue.length}`);
+
+                // Stop any old-style manual timers from the non-worker version
+                if (manualTimerTimeoutId) { clearTimeout(manualTimerTimeoutId); manualTimerTimeoutId = null; }
+                if (visualCountdownInterval) { clearInterval(visualCountdownInterval); visualCountdownInterval = null; }
+
+                // Start visual countdown for the first prompt. Subsequent updates might be linked to worker messages.
+                startVisualCountdown(intervalSeconds);
+
+                remixModeWorker.postMessage({
+                    command: 'start',
+                    prompts: [...promptQueue],
+                    originalPrompts: [...originalPromptList],
+                    isLooping: isLooping,
+                    interval: intervalMs
+                });
+            }
+
+            // The old `startManualRemixLoop` and its `manualRemixTick` are now fully replaced by the worker-driven approach above.
+            // Any direct calls to an old `manualRemixTick` should be gone or refactored.
+            // The visual countdown (`startVisualCountdown`) is still managed in the main thread but should be 
+            // triggered appropriately, perhaps when the worker signals `process_prompt_in_main` for manual mode.
+            // For now, `startManualRemixLoop` kicks it off for the first prompt.
+            // And `handleRemixWorkerMessage` for `process_prompt_in_main` might need to restart it if in manual mode.
+
+
+            // Ensure `handleRemixWorkerMessage` correctly handles visual countdown for manual mode.
+            // Modify `handleRemixWorkerMessage` for 'process_prompt_in_main' case:
+            // ... inside handleRemixWorkerMessage ...
+            // case 'process_prompt_in_main':
+            // ... (existing logic to get prompt and call DOM functions) ...
+            // After `await submitRemixPrompt(data.prompt);`
+            // if (isRunning && !document.getElementById('sora-auto-submit-checkbox')?.checked) { // If manual mode
+            //    const cooldownInput = document.getElementById('sora-cooldown-time');
+            //    let currentCooldown = parseInt(cooldownInput?.value, 10) || 5;
+            //    startVisualCountdown(currentCooldown);
+            // }
+            // This logic will be added in the next edit refinement for handleRemixWorkerMessage.
+
+
+            // Ensure the original `startManualRemixLoop` (the one with `manualRemixTick` inside) is fully removed or commented out
+            // to avoid confusion and conflicts. The search results showed it from line 3179.
+            // For this edit, I am assuming the new worker-based `startRemixLoop` and `startManualRemixLoop` replace prior versions.
+            // If there are remnants of old loop mechanisms, they should be cleaned.
+
+            // Keyboard shortcut 'E' for manual remix of current prompt (single shot, not loop)
+            async function handleManualRemix() { // This is for single manual remix, NOT the loop.
+                log("Handling manual remix trigger (e.g., 'E' key).");
+                if (isRunning) {
+                    alert("A process is already running. Please stop it before starting a new manual remix.");
+                    log("Manual remix aborted: Process already running.");
+                    return;
+                }
+
+                const soraInput = document.getElementById('sora-input');
+                let promptToUse = soraInput?.value.trim();
+
+                if (!promptToUse) {
+                    alert("Prompt input is empty. Cannot start manual remix.");
+                    log("Manual remix aborted: Prompt input empty.");
+                    return;
+                }
+
+                // This is a single action, does not use the worker loop.
+                // It uses the direct call path of processNextRemixPrompt (or rather, its constituent parts).
+                log(`Starting single manual remix for prompt: "${promptToUse}"`);
+                isRunning = true; // Set running for this single operation
+                isRemixMode = true; // It is a remix operation
+                isLooping = false;  // Not a loop
+                promptQueue = [promptToUse]; // Queue with one prompt
+                originalPromptList = [promptToUse];
+                totalPromptCount = 1;
+                totalPromptsSentLoop = 0;
+                updateProgress(); // Show it's starting
+
+                // Directly call the DOM interaction sequence for a single prompt
+                // This bypasses the worker as it's a one-off.
+                try {
+                    log("Manual Remix (single): Waiting for remix button...");
+                    const remixAvailable = await waitForRemixButton();
+                    if (!remixAvailable || !isRunning) { // Check isRunning again in case of quick stop
+                        log("Manual remix (single): Remix button not available or stopped.");
+                        handleStop(); return;
+                    }
+
+                    const remixClicked = await clickRemixButton();
+                    if (!remixClicked || !isRunning) {
+                        log("Manual remix (single): Failed to click remix button or stopped.");
+                        handleStop(); return;
+                    }
+
+                    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for UI
+                    if (!isRunning) { log("Manual remix (single): Stopped waiting for UI."); handleStop(); return; }
+
+                    await submitRemixPrompt(promptToUse);
+                    log("Manual remix (single) prompt submitted.");
+
+                } catch (error) {
+                    log(`ERROR during single manual remix: ${error.message}`);
+                    console.error("Single Manual Remix Error:", error);
+                    alert(`Manual remix failed: ${error.message}`);
+                } finally {
+                    log("Single manual remix attempt finished. Resetting state.");
+                    // Ensure state is reset after this single operation, regardless of success/failure.
+                    // isRunning = false; // handleStop will do this
+                    // isRemixMode might be toggled by user, so don't reset it here unless intended.
+                    handleStop(); // Cleans up isRunning, timers, etc.
+                    // promptQueue = []; // handleStop and subsequent starts should manage queue
+                    // updateProgress(); // handleStop calls updateProgress
+                }
+            }
+
+            // Remove or comment out the old startManualRemixLoop (around line 3179)
+            // The edit should find the old version and effectively replace it.
+            // For example:
+            /*
+            function startManualRemixLoop(intervalSeconds) { // OLD VERSION - TO BE REMOVED/COMMENTED
+                log(`OLD Starting MANUAL Remix Loop with ${intervalSeconds}s interval. Loop: ${isLooping}`);
+                // ... old code using manualTimerTimeoutId and manualRemixTick ...
+            }
+            */
+
+            // The handleKeyboardShortcuts function (around line 3110) calls handleManualRemix.
+            // This seems fine as handleManualRemix is for a single prompt.
+
+            (async function main() {
+                // ... existing code ...
+            })();
         })();
