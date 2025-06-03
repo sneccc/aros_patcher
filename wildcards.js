@@ -1,7 +1,7 @@
 const wildcardUtils = {
     categories: {
         color: ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'black', 'white', 'pink', 'brown', 'gray', 'gold', 'silver', 'rainbow'],
-        animal: ['dog', 'cat', 'bird', 'fish', 'lion', 'tiger', 'bear', 'elephant', 'monkey', 'gorilla', 'zebra', 'giraffe', 'wolf', 'fox', 'deer', 'rabbit', 'squirrel', 'dragon', 'unicorn', 'phoenix', 'panda', 'koala', 'kangaroo', 'penguin', 'owl', 'eagle', 'shark', 'dolphin', 'whale', 'octopus', 'crab', 'butterfly', 'scorpion', 'snake', 'lizard', 'frog', 'crocodile', 'hippopotamus', 'rhinoceros', 'bat'],
+        animal: ['ape', 'badger', 'bat', 'bear', 'bird', 'bison', 'butterfly', 'camel', 'cat', 'cheetah', 'cobra', 'crab', 'crane', 'crocodile', 'crow', 'deer', 'dog', 'dolphin', 'dragon', 'eagle', 'elephant', 'emu', 'falcon', 'ferret', 'fish', 'flamingo', 'fox', 'frog', 'gazelle', 'gecko', 'giraffe', 'gorilla', 'hippopotamus', 'hyena', 'iguana', 'jaguar', 'jellyfish', 'kangaroo', 'koala', 'lemur', 'leopard', 'lion', 'lizard', 'llama', 'lynx', 'manatee', 'mole', 'monkey', 'moose', 'narwhal', 'ocelot', 'octopus', 'opossum', 'ostrich', 'otter', 'owl', 'panda', 'panther', 'peacock', 'pelican', 'penguin', 'phoenix', 'platypus', 'porcupine', 'puma', 'rabbit', 'raccoon', 'reindeer', 'rhinoceros', 'scorpion', 'shark', 'sloth', 'snail', 'snake', 'spider', 'squirrel', 'stingray', 'swan', 'tapir', 'tiger', 'toad', 'turtle', 'unicorn', 'vulture', 'walrus', 'whale', 'wolf', 'wombat', 'zebra'],
         object: ['ball', 'cube', 'sphere', 'pyramid', 'car', 'house', 'tree', 'flower', 'book', 'computer', 'phone', 'chair', 'table', 'lamp', 'sword', 'shield', 'rocket', 'planet', 'orb', 'ring', 'amulet', 'staff', 'wand', 'potion', 'scroll', 'crystal ball', 'telescope', 'microscope', 'robot', 'drone', 'spaceship', 'portal', 'key', 'chest', 'crown', 'throne', 'artifact', 'relic'],
         material: ['wooden', 'metallic', 'glass', 'fabric', 'stone', 'plastic', 'glowing', 'crystal', 'velvet', 'silk', 'rusty', 'polished', 'matte', 'transparent', 'liquid'],
         emotion: ['happy', 'sad', 'angry', 'surprised', 'joyful', 'melancholic', 'fierce', 'calm', 'serene', 'anxious', 'excited', 'dreamy', 'nostalgic'],
@@ -89,12 +89,31 @@ const wildcardUtils = {
 
                 let currentPrompt = basePrompt;
                 const wildcardRegex = /__([a-zA-Z0-9_]+)__/g; // Matches __wildcard__
-                
-                // Fixed: Use String.replace with callback to handle all wildcards at once
+                const usedInCategoryForThisPrompt = {}; // Track used items for the current prompt generation
+
                 currentPrompt = currentPrompt.replace(wildcardRegex, (match, categoryName) => {
                     categoryName = categoryName.toLowerCase();
                     if (this.categories[categoryName] && this.categories[categoryName].length > 0) {
-                        return this.getRandomElement(this.categories[categoryName]);
+                        // Initialize tracker for this category if not already present
+                        if (!usedInCategoryForThisPrompt[categoryName]) {
+                            usedInCategoryForThisPrompt[categoryName] = [];
+                        }
+
+                        // Find available items that haven't been used yet in this prompt for this category
+                        const availableItems = this.categories[categoryName].filter(
+                            item => !usedInCategoryForThisPrompt[categoryName].includes(item)
+                        );
+
+                        if (availableItems.length > 0) {
+                            const chosenItem = this.getRandomElement(availableItems);
+                            usedInCategoryForThisPrompt[categoryName].push(chosenItem);
+                            return chosenItem;
+                        } else {
+                            // All unique items for this category have been used up in this prompt.
+                            // Fallback to picking any random item (allowing repetition for this instance).
+                            console.warn(`All unique items for category "${categoryName}" were used in the current prompt. Allowing repetition for this instance of the wildcard.`);
+                            return this.getRandomElement(this.categories[categoryName]); // Fallback
+                        }
                     }
                     // If category not found or empty, return the wildcard itself
                     console.warn(`Wildcard category "${categoryName}" not found or empty. Keeping placeholder.`);
